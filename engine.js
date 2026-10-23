@@ -1,8 +1,9 @@
 import { LEVELS } from './levels.js?v=5';
 import { SEARCH_LEVELS } from './search-levels.js?v=1';
+import { SEARCH_CAMPAIGN_LEVELS } from './search-campaign-levels.js?v=1';
 
 export const LEVEL_COUNT = 100;
-export const SEARCH_LEVEL_COUNT = 8;
+export const SEARCH_LEVEL_COUNT = SEARCH_LEVELS.length + SEARCH_CAMPAIGN_LEVELS.length;
 
 const DIRECTIONS = {
   up: [0, -1], right: [1, 0], down: [0, 1], left: [-1, 0],
@@ -27,7 +28,17 @@ export function createSearchLevel(levelNumber) {
   if (!Number.isInteger(levelNumber) || levelNumber < 1 || levelNumber > SEARCH_LEVEL_COUNT) {
     throw new RangeError(`Search level must be an integer from 1 to ${SEARCH_LEVEL_COUNT}`);
   }
-  return copyBoard(SEARCH_LEVELS[levelNumber - 1]);
+  if (levelNumber <= SEARCH_LEVELS.length) return copyBoard(SEARCH_LEVELS[levelNumber - 1]);
+  // Expand only the selected board; shipped tail-to-head cells use linear indices.
+  const { id, name, size, packedPieces } = SEARCH_CAMPAIGN_LEVELS[levelNumber - SEARCH_LEVELS.length - 1];
+  const directions = ['up', 'right', 'down', 'left'];
+  return {
+    id, name, size,
+    pieces: packedPieces.map(([direction, cells], index) => ({
+      id: `s${id}-p${index + 1}`, dir: directions[direction], color: 0,
+      cells: cells.map(cell => [cell % size, Math.floor(cell / size)]),
+    })),
+  };
 }
 
 function occupancyFor(board) {

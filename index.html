@@ -20,7 +20,7 @@
     <p class="intro" id="intro">找一条出路，慢慢清空。</p>
     <section class="play-area" aria-label="清空小游戏">
       <div class="play-modes" role="group" aria-label="选择玩法"><button id="mode-cube" aria-pressed="false">立体找箭头</button><button id="mode-search" aria-pressed="true">密线找箭头</button><button id="mode-classic" aria-pressed="false">原版 100 关</button></div>
-      <div class="level-meta"><button id="level-open" class="level-button" aria-haspopup="dialog"><span id="level-label">第 01 关</span><svg viewBox="0 0 16 16" aria-hidden="true"><path d="m4 6 4 4 4-4"/></svg></button><span id="count">准备好了</span></div>
+      <div class="level-meta"><button id="level-open" class="level-button" aria-haspopup="dialog"><span id="level-label">第 01 关</span><svg viewBox="0 0 16 16" aria-hidden="true"><path d="m4 6 4 4 4-4"/></svg></button><span id="count">正在加载…</span></div>
       <div class="board-controls"><span id="board-guide">点箭头任意一段。</span><button id="zoom" class="zoom-button" aria-pressed="false" aria-controls="board-viewport"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10" cy="10" r="6"/><path d="m14.5 14.5 5 5M7 10h6m-3-3v6"/></svg><span id="zoom-label">放大棋盘</span></button></div>
       <div class="board-wrap" id="board-wrap"><div class="board-viewport" id="board-viewport" aria-describedby="board-guide"><div class="board-surface" id="board-surface"><canvas id="board" aria-hidden="true"></canvas><div id="pieces" role="group" aria-label="点箭头任意一段，让它沿方向离开"></div></div></div><div id="cube-stage" hidden aria-label="可旋转的六面箭头立方体"></div><div id="finish" class="finish" hidden><svg viewBox="0 0 60 60" aria-hidden="true"><path d="m17 30 9 9 17-20"/></svg><h1 id="finish-title">空出来了。</h1><p id="finish-copy">留一点空，刚刚好。</p><button id="next" class="primary-button">再来一关<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14m-6-6 6 6-6 6"/></svg></button></div></div>
       <div class="cube-controls" id="cube-controls" hidden><button id="cube-prev" aria-label="查看上一面"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m14 6-6 6 6 6"/></svg>上一面</button><button id="cube-reset">复位视角</button><button id="cube-next" aria-label="查看下一面">下一面<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m10 6 6 6-6 6"/></svg></button></div>
@@ -30,6 +30,6 @@
     <footer class="game-footer"><span id="level-name">轻轻开始</span><span id="pace-note">不限次数，误点没关系。</span></footer>
   </main>
   <dialog id="level-dialog" aria-labelledby="level-dialog-title"><div class="dialog-top"><h2 id="level-dialog-title">选一关，慢慢玩。</h2><button id="level-close" class="icon-button" aria-label="关闭关卡选择"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button></div><div id="level-grid"></div><p>每一关都可以直接开始。</p></dialog>
-  <script type="module" src="app.js?v=18"></script>
+  <script type="module" src="app.js?v=19"></script>
 </body>
 </html>

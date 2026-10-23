@@ -1,8 +1,8 @@
-import { LEVEL_COUNT, SEARCH_LEVEL_COUNT, createLevel, createSearchLevel, availableMoves, tryMove } from './engine.js?v=7';
+import { LEVEL_COUNT, SEARCH_LEVEL_COUNT, createLevel, createSearchLevel, availableMoves, tryMove } from './engine.js?v=8';
 import { expireNudges } from './feedback.js?v=5';
 import { restoreProgress, PROGRESS_REVISION } from './progress.js?v=5';
 import { hitPieceAt, exitPath, updateGesture, isTapGesture } from './geometry.js?v=5';
-import { restoreSearchProgress, SEARCH_PROGRESS_REVISION } from './search-progress.js?v=7';
+import { restoreSearchProgress, SEARCH_PROGRESS_REVISION } from './search-progress.js?v=8';
 import { CUBE_LEVEL_COUNT, createCubeLevel, availableCubeMoves, tryCubeMove } from './cube-engine.js?v=18';
 import { restoreCubeProgress, CUBE_PROGRESS_REVISION } from './cube-progress.js?v=18';
 import { createShapeView } from './shape-view.js?v=18';
@@ -226,7 +226,7 @@ function finish() {
   if (board.pieces.length) return;
   const last = level === levelCount();
   $('finish-title').textContent = last ? '都空出来了。' : '空出来了。';
-  $('finish-copy').textContent = last && isCube() ? `${CUBE_LEVEL_COUNT}关立体，都慢慢理清了。` : last && isSearch() ? '八关密线，慢慢理清了。' : last ? '谢谢你慢慢玩到这里。' : '留一点空，刚刚好。';
+  $('finish-copy').textContent = last && isCube() ? `${CUBE_LEVEL_COUNT}关立体，都慢慢理清了。` : last && isSearch() ? `${SEARCH_LEVEL_COUNT}关密线，都慢慢理清了。` : last ? '谢谢你慢慢玩到这里。' : '留一点空，刚刚好。';
   $('next').firstChild.textContent = last ? '从头再玩' : '再来一关';
   $('finish').hidden = false;
   message(last ? '也可以选一关，换个顺序再玩。' : '可以歇一下，也可以再来一关。', 'success');
@@ -423,7 +423,7 @@ $('sound').addEventListener('click', () => {
 });
 $('level-open').addEventListener('click', () => {
   const grid = $('level-grid'); grid.replaceChildren();
-  $('level-dialog-title').textContent = isCube() ? '选一关，转转看。' : isSearch() ? '八关密线，选一关试试。' : '选一关，慢慢玩。';
+  $('level-dialog-title').textContent = isCube() ? '选一关，转转看。' : isSearch() ? `${SEARCH_LEVEL_COUNT}关密线，选一关慢慢玩。` : '选一关，慢慢玩。';
   for (let n = 1; n <= levelCount(); n++) {
     const button = document.createElement('button');
     button.textContent = String(n).padStart(2, '0');
