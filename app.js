@@ -6,6 +6,7 @@ import { restoreSearchProgress, SEARCH_PROGRESS_REVISION } from './search-progre
 import { CUBE_LEVEL_COUNT, createCubeLevel, availableCubeMoves, tryCubeMove } from './cube-engine.js?v=18';
 import { restoreCubeProgress, CUBE_PROGRESS_REVISION } from './cube-progress.js?v=18';
 import { createShapeView } from './shape-view.js?v=18';
+import { restorePlayHistory, recordCompletion, formatDuration, createPlayTimer } from './play-history.js?v=1';
 
 const $ = id => document.getElementById(id);
 const canvas = $('board'), ctx = canvas.getContext('2d'), piecesEl = $('pieces');
@@ -13,6 +14,7 @@ const viewport = $('board-viewport'), surface = $('board-surface');
 const storeKey = 'clear-a-little-v1';
 const searchStoreKey = 'clear-a-little-search-v1', modeStoreKey = 'clear-a-little-mode';
 const cubeStoreKey = 'clear-a-little-cube-v1';
+const historyStoreKey = 'clear-a-little-play-history-v1';
 const dirs = { up: [0, -1], right: [1, 0], down: [0, 1], left: [-1, 0] };
 const names = { up: '上', right: '右', down: '下', left: '左' };
 const colors = [['#a3b9a0', '#34573c'], ['#d8b093', '#795035'], ['#c5c59b', '#596238'], ['#9bb5bb', '#365c68'], ['#c0aab7', '#715164']];
@@ -22,6 +24,26 @@ let sound = false, audio, statusTimer, finishTimer, cubeHintTimer;
 const reduced = window.matchMedia('(prefers-reduced-motion: reduce)');
 const readProgress = (key, restore) => {
   try { return restore(JSON.parse(localStorage.getItem(key))); } catch { return restore(null); }
+};
+let playHistory = readProgress(historyStoreKey, restorePlayHistory);
+const playTimer = createPlayTimer();
+let timerTick;
+const guides = {
+  classic: { name: '原版 100 关', title: '顺着箭头，慢慢清空。', steps: [
+    ['轻点一下', '点小块或线路的任意一段，它会沿箭头方向离开。'],
+    ['先让前方空出来', '被挡住时，先移开挡路的那条。全部清空就过关。'],
+    ['慢慢试就好', '误点不限次数，随时可以撤回、看提示；密了也能放大。'],
+  ] },
+  search: { name: '密线找箭头', title: '先找一条空着的出路。', steps: [
+    ['看箭头前方', '前方没有别的线，就能移走；被挡住时先找其他出路。'],
+    ['点线路任意一段', '线太密时，放大棋盘，再拖动查看四周。'],
+    ['一条条清空', '全部清空就过关。误点不限次数，也能撤回、看提示。'],
+  ] },
+  cube: { name: '立体找箭头', title: '转一转，找到下一条出路。', steps: [
+    ['拖动旋转', '拖动造型看不同方向，轻点线路任意一段尝试移走。'],
+    ['跟着线看', '长线可能绕到另一面；箭头前方空了，才能抽走。'],
+    ['慢慢清空整个造型', '误点不限次数，可放大、看提示，也能撤回一步。'],
+  ] },
 };
 const modeProgress = {
   classic: readProgress(storeKey, saved => restoreProgress(saved, LEVEL_COUNT)),
@@ -63,6 +85,43 @@ function save() {
 function restingCopy() {
   if (isRound()) return '前方留出一小段空隙，线路就能抽走。';
   return isCube() ? (level >= 4 ? '线路会跨面，箭头前方空了才能移走。' : '沿本面出口离开，清空六面过关。') : isSearch() ? '找一条前方空着的箭头，不用着急。' : isTutorial() ? '顺着箭头，把小块移出去。' : '看清方向，一条一条清空。';
+}
+
+function savePlayHistory() {
+  try { localStorage.setItem(historyStoreKey, JSON.stringify(playHistory)); }
+  catch { $('record-note').textContent = '当前浏览器暂时无法保存记录，关闭页面后可能丢失。'; }
+}
+
+function renderTime() {
+  const elapsed = playTimer.elapsed();
+  $('attempt-time').textContent = `本关用时 ${formatDuration(playTimer.finished ? elapsed : Math.floor(elapsed / 1000) * 1000)}`;
+  const record = playHistory.times[mode][level];
+  $('best-time').hidden = !record;
+  $('best-time').textContent = record ? `上次 ${formatDuration(record.latestMs)} · 最佳 ${formatDuration(record.bestMs)}` : '';
+}
+
+function syncTimer() {
+  const paused = document.hidden || $('guide-dialog').open || $('level-dialog').open;
+  playTimer.setPaused(paused);
+  clearInterval(timerTick);
+  renderTime();
+  if (!paused && !playTimer.finished) timerTick = setInterval(renderTime, 1000);
+}
+
+function showGuide(firstVisit = false) {
+  const guide = guides[mode], list = $('guide-steps');
+  $('guide-mode').textContent = guide.name;
+  $('guide-title').textContent = guide.title;
+  $('guide-start').textContent = firstVisit ? '开始玩' : '继续玩';
+  list.replaceChildren();
+  for (const [title, copy] of guide.steps) {
+    const item = document.createElement('li'), heading = document.createElement('strong'), text = document.createElement('span');
+    heading.textContent = title; text.textContent = copy; item.append(heading, text); list.append(item);
+  }
+  $('guide-dialog').showModal();
+  $('guide-title').focus({ preventScroll: true });
+  $('guide-dialog').scrollTop = 0;
+  syncTimer();
 }
 
 function message(text, kind = '') {
@@ -128,6 +187,9 @@ function setBoard(n) {
   message(restingCopy());
   resize(); viewport.scrollLeft = 0; viewport.scrollTop = 0;
   refresh(); save(); requestDraw();
+  playTimer.setPaused(true); playTimer.reset();
+  if (!playHistory.guides[mode]) showGuide(true);
+  syncTimer();
 }
 
 function selectMode(nextMode) {
@@ -195,7 +257,7 @@ function renderHits() {
 }
 
 function move(id) {
-  if (!board.pieces.length || !$('finish').hidden) return;
+  if (!board.pieces.length || !$('finish').hidden || $('guide-dialog').open || $('level-dialog').open) return;
   const result = isCube() ? tryCubeMove(board, id) : tryMove(board, id), piece = board.pieces.find(p => p.id === id);
   if (!piece) return;
   const now = performance.now();
@@ -217,6 +279,8 @@ function move(id) {
   }
   tone(); refresh(); requestDraw();
   if (!board.pieces.length) {
+    playHistory = recordCompletion(playHistory, mode, level, playTimer.complete());
+    savePlayHistory(); syncTimer();
     completed.add(level); save();
     finishTimer = setTimeout(finish, reduced.matches ? 120 : 530);
   }
@@ -229,6 +293,9 @@ function finish() {
   $('finish-copy').textContent = last && isCube() ? `${CUBE_LEVEL_COUNT}关立体，都慢慢理清了。` : last && isSearch() ? `${SEARCH_LEVEL_COUNT}关密线，都慢慢理清了。` : last ? '谢谢你慢慢玩到这里。' : '留一点空，刚刚好。';
   $('next').firstChild.textContent = last ? '从头再玩' : '再来一关';
   $('finish').hidden = false;
+  const record = playHistory.times[mode][level];
+  $('finish-time').textContent = `本次用时 ${formatDuration(playTimer.elapsed())}`;
+  $('finish-best').textContent = record ? `最佳用时 ${formatDuration(record.bestMs)}` : '';
   message(last ? '也可以选一关，换个顺序再玩。' : '可以歇一下，也可以再来一关。', 'success');
   tone(true);
 }
@@ -388,6 +455,7 @@ $('zoom').addEventListener('click', () => {
 $('undo').addEventListener('click', () => {
   if (!history.length) return;
   clearTimeout(finishTimer); clearTimeout(cubeHintTimer); board = history.pop(); $('finish').hidden = true;
+  playTimer.resumeAfterUndo(); syncTimer();
   flights = []; sparks = []; hintId = null; nudges.clear();
   message('退一步也很好。'); refresh(); requestDraw();
 });
@@ -426,14 +494,30 @@ $('level-open').addEventListener('click', () => {
   $('level-dialog-title').textContent = isCube() ? '选一关，转转看。' : isSearch() ? `${SEARCH_LEVEL_COUNT}关密线，选一关慢慢玩。` : '选一关，慢慢玩。';
   for (let n = 1; n <= levelCount(); n++) {
     const button = document.createElement('button');
-    button.textContent = String(n).padStart(2, '0');
+    const number = document.createElement('span'), time = document.createElement('small');
+    const record = playHistory.times[mode][n];
+    number.textContent = String(n).padStart(2, '0');
+    time.textContent = record ? `最佳 ${formatDuration(record.bestMs)}` : completed.has(n) ? '已通关' : '';
+    button.append(number, time);
     button.className = [n === level ? 'current' : '', completed.has(n) ? 'complete' : ''].join(' ');
-    button.setAttribute('aria-label', `第 ${n} 关${completed.has(n) ? '，已完成' : ''}`);
+    button.setAttribute('aria-label', `第 ${n} 关${completed.has(n) ? '，已完成' : ''}${record ? `，最佳用时 ${formatDuration(record.bestMs)}，上次用时 ${formatDuration(record.latestMs)}` : ''}`);
     if (n === level) button.setAttribute('aria-current', 'true');
     button.addEventListener('click', () => { $('level-dialog').close(); setBoard(n); }); grid.append(button);
   }
-  $('level-dialog').showModal(); grid.querySelector('[aria-current]')?.scrollIntoView({ block: 'nearest' });
+  $('level-dialog').showModal(); syncTimer(); grid.querySelector('[aria-current]')?.scrollIntoView({ block: 'nearest' });
 });
+$('help-open').addEventListener('click', () => showGuide());
+$('guide-start').addEventListener('click', () => $('guide-dialog').close());
+$('guide-dialog').addEventListener('close', () => {
+  if (!playHistory.guides[mode]) {
+    playHistory.guides[mode] = true; savePlayHistory();
+  }
+  syncTimer();
+});
+$('level-dialog').addEventListener('close', syncTimer);
+document.addEventListener('visibilitychange', syncTimer);
+window.addEventListener('pagehide', () => { playTimer.setPaused(true); clearInterval(timerTick); });
+window.addEventListener('pageshow', syncTimer);
 $('level-close').addEventListener('click', () => $('level-dialog').close());
 $('level-dialog').addEventListener('click', event => {
   if (event.target !== $('level-dialog')) return;

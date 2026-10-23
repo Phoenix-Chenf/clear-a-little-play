@@ -42,3 +42,35 @@ body[data-mode=cube] .board-wrap{background:#e8ecdf}
 body[data-mode=cube] .feedback-line{min-height:38px}
 @media(max-height:700px){.intro{margin-bottom:12px}.play-modes{margin-bottom:4px;padding-bottom:5px}}
 @media(max-height:700px){.board-controls{margin-bottom:5px}.level-meta{margin-bottom:0}}
+
+.header-actions{display:flex;align-items:center;gap:3px;flex-shrink:0}
+.help-button{border:0;background:transparent;min-height:44px;padding:0 8px;border-radius:10px;font-size:12px;color:var(--quiet)}
+.help-button:hover{background:#e7eadf}
+.time-row{display:flex;align-items:baseline;justify-content:space-between;flex-wrap:wrap;column-gap:12px;row-gap:3px;min-height:22px;font-size:11px;line-height:1.6;color:var(--quiet);font-variant-numeric:tabular-nums}
+#best-time{font-size:10px}
+.finish>svg{width:48px;height:48px;margin-bottom:7px}
+.finish h1{font-size:27px;margin-bottom:7px}
+.finish>p{margin-bottom:12px}
+.finish-record{margin:0 0 17px;text-align:center;font-variant-numeric:tabular-nums}
+.finish .finish-record p{margin:0;font-size:16px;line-height:1.7;color:var(--ink)}
+.finish .finish-record p+p{font-size:11px;color:var(--quiet)}
+#level-grid button{aspect-ratio:auto;min-height:66px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;padding:8px 2px}
+#level-grid button small{font-size:9px;line-height:1.4;min-height:13px;white-space:nowrap}
+#level-grid button.complete:after{display:none}
+#level-grid button.complete>span:after{content:' ·';color:#648467}
+#level-grid button.current>span:after{color:#d3dec8}
+.guide-dialog{padding:27px 25px 21px;overflow-y:auto;overscroll-behavior:contain}
+.guide-dialog .guide-mode{font-size:11px;letter-spacing:.1em;margin:0 0 10px;color:var(--quiet)}
+.guide-dialog h2{font-size:22px;line-height:1.5;max-width:260px}
+#guide-steps{list-style:none;counter-reset:steps;margin:24px 0 19px;padding:0}
+#guide-steps li{position:relative;counter-increment:steps;padding-left:32px;margin:0 0 17px}
+#guide-steps li:last-child{margin-bottom:0}
+#guide-steps li:before{content:counter(steps,decimal-leading-zero);position:absolute;left:0;top:2px;font-size:11px;color:#74846c;font-variant-numeric:tabular-nums}
+#guide-steps strong{display:block;font-size:14px;font-weight:600;margin-bottom:4px}
+#guide-steps span{display:block;font-size:12px;line-height:1.75;color:var(--quiet)}
+.guide-dialog #guide-note{font-size:11px;line-height:1.75;margin:0 0 19px;color:var(--quiet)}
+.guide-dialog .primary-button{width:100%;flex-shrink:0}
+.guide-dialog .guide-return{font-size:10px;line-height:1.5;text-align:center;margin:12px 0 0;color:var(--quiet)}
+#record-note{margin-top:7px;line-height:1.6}
+@media(max-width:360px){.game-header{gap:6px}.help-button{padding:0 6px;font-size:11px}.guide-dialog{padding:22px 20px}.guide-dialog h2{font-size:20px}#guide-steps{margin-top:18px}#level-grid button small{font-size:8px}}
+@media(max-height:500px){.guide-dialog{padding:20px}#guide-steps{margin:15px 0}#guide-steps li{margin-bottom:11px}.guide-dialog .guide-return{margin-top:9px}}
