@@ -74,3 +74,17 @@ body[data-mode=cube] .feedback-line{min-height:38px}
 #record-note{margin-top:7px;line-height:1.6}
 @media(max-width:360px){.game-header{gap:6px}.help-button{padding:0 6px;font-size:11px}.guide-dialog{padding:22px 20px}.guide-dialog h2{font-size:20px}#guide-steps{margin-top:18px}#level-grid button small{font-size:8px}}
 @media(max-height:500px){.guide-dialog{padding:20px}#guide-steps{margin:15px 0}#guide-steps li{margin-bottom:11px}.guide-dialog .guide-return{margin-top:9px}}
+
+.guide-dialog{padding:0;overflow:hidden}
+.guide-scroll{min-height:0;overflow-y:auto;overscroll-behavior:contain;padding:24px 24px 0;scrollbar-width:thin;scrollbar-color:#b2bea7 transparent}
+#guide-title:focus{outline:none}
+#guide-demo{margin:16px 0 0}
+#guide-steps{margin:19px 0 16px}
+#guide-steps li{margin-bottom:12px;padding-left:28px}
+#guide-steps strong{font-size:13px;margin-bottom:2px}
+#guide-steps span{font-size:11px;line-height:1.65}
+.guide-dialog #guide-note{margin-bottom:17px;font-size:10px}
+.guide-actions{flex-shrink:0;padding:14px 24px 17px;border-top:1px solid var(--line);background:var(--paper)}
+.guide-dialog .guide-return{font-size:9px;margin-top:9px}
+@media(max-width:360px){.guide-scroll{padding:20px 19px 0}.guide-actions{padding:12px 19px 15px}.guide-dialog h2{font-size:19px}#guide-demo{margin-top:12px}}
+@media(max-height:500px){.guide-scroll{padding-top:17px}.guide-actions{padding-top:10px;padding-bottom:12px}.guide-dialog .guide-return{display:none}}

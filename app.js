@@ -7,6 +7,7 @@ import { CUBE_LEVEL_COUNT, createCubeLevel, availableCubeMoves, tryCubeMove } fr
 import { restoreCubeProgress, CUBE_PROGRESS_REVISION } from './cube-progress.js?v=18';
 import { createShapeView } from './shape-view.js?v=18';
 import { restorePlayHistory, recordCompletion, formatDuration, createPlayTimer } from './play-history.js?v=1';
+import { createGuideDemo } from './guide-demo.js?v=1';
 
 const $ = id => document.getElementById(id);
 const canvas = $('board'), ctx = canvas.getContext('2d'), piecesEl = $('pieces');
@@ -27,22 +28,22 @@ const readProgress = (key, restore) => {
 };
 let playHistory = readProgress(historyStoreKey, restorePlayHistory);
 const playTimer = createPlayTimer();
-let timerTick;
+let timerTick, guideDemo;
 const guides = {
   classic: { name: '原版 100 关', title: '顺着箭头，慢慢清空。', steps: [
-    ['轻点一下', '点小块或线路的任意一段，它会沿箭头方向离开。'],
-    ['先让前方空出来', '被挡住时，先移开挡路的那条。全部清空就过关。'],
-    ['慢慢试就好', '误点不限次数，随时可以撤回、看提示；密了也能放大。'],
+    ['轻点一下', '点小块或线路的任意一段。'],
+    ['看箭头前方', '被挡住时，先移开挡路的线。'],
+    ['清空就过关', '不限次数，可撤回、看提示和放大。'],
   ] },
   search: { name: '密线找箭头', title: '先找一条空着的出路。', steps: [
-    ['看箭头前方', '前方没有别的线，就能移走；被挡住时先找其他出路。'],
-    ['点线路任意一段', '线太密时，放大棋盘，再拖动查看四周。'],
-    ['一条条清空', '全部清空就过关。误点不限次数，也能撤回、看提示。'],
+    ['先看前方', '箭头前方没有别的线，就能移走。'],
+    ['点线路任意一段', '线太密时，放大后拖动查看。'],
+    ['一条条清空', '不限次数，也能撤回、看提示。'],
   ] },
   cube: { name: '立体找箭头', title: '转一转，找到下一条出路。', steps: [
-    ['拖动旋转', '拖动造型看不同方向，轻点线路任意一段尝试移走。'],
-    ['跟着线看', '长线可能绕到另一面；箭头前方空了，才能抽走。'],
-    ['慢慢清空整个造型', '误点不限次数，可放大、看提示，也能撤回一步。'],
+    ['拖动旋转', '看看背面和另一侧。'],
+    ['点线路任意一段', '长线可能跨面，箭头前方空了才能抽走。'],
+    ['慢慢清空整个造型', '不限次数，可放大、撤回或看提示。'],
   ] },
 };
 const modeProgress = {
@@ -106,6 +107,12 @@ function syncTimer() {
   clearInterval(timerTick);
   renderTime();
   if (!paused && !playTimer.finished) timerTick = setInterval(renderTime, 1000);
+  guideDemo?.setSuspended(document.hidden || !$('guide-dialog').open);
+}
+
+function mountGuideDemo() {
+  guideDemo?.destroy();
+  guideDemo = createGuideDemo($('guide-demo'), { mode, reducedMotion: reduced.matches });
 }
 
 function showGuide(firstVisit = false) {
@@ -120,7 +127,8 @@ function showGuide(firstVisit = false) {
   }
   $('guide-dialog').showModal();
   $('guide-title').focus({ preventScroll: true });
-  $('guide-dialog').scrollTop = 0;
+  $('guide-scroll').scrollTop = 0;
+  mountGuideDemo();
   syncTimer();
 }
 
@@ -509,6 +517,7 @@ $('level-open').addEventListener('click', () => {
 $('help-open').addEventListener('click', () => showGuide());
 $('guide-start').addEventListener('click', () => $('guide-dialog').close());
 $('guide-dialog').addEventListener('close', () => {
+  guideDemo?.destroy(); guideDemo = null;
   if (!playHistory.guides[mode]) {
     playHistory.guides[mode] = true; savePlayHistory();
   }
@@ -516,8 +525,11 @@ $('guide-dialog').addEventListener('close', () => {
 });
 $('level-dialog').addEventListener('close', syncTimer);
 document.addEventListener('visibilitychange', syncTimer);
-window.addEventListener('pagehide', () => { playTimer.setPaused(true); clearInterval(timerTick); });
+window.addEventListener('pagehide', () => { playTimer.setPaused(true); clearInterval(timerTick); guideDemo?.setSuspended(true); });
 window.addEventListener('pageshow', syncTimer);
+reduced.addEventListener('change', () => {
+  if ($('guide-dialog').open) { mountGuideDemo(); syncTimer(); }
+});
 $('level-close').addEventListener('click', () => $('level-dialog').close());
 $('level-dialog').addEventListener('click', event => {
   if (event.target !== $('level-dialog')) return;

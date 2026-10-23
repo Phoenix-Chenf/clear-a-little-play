@@ -7,7 +7,8 @@
   <meta name="description" content="点一下，让拥挤慢慢散开。一款操作简单、反馈轻快的清空小游戏。">
   <title>空一点 · 清空小游戏</title>
   <link rel="icon" href="icon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="style.css?v=19">
+  <link rel="stylesheet" href="style.css?v=20">
+  <link rel="stylesheet" href="guide-demo.css?v=1">
   <link rel="stylesheet" href="cube-view.css?v=18">
   <link rel="stylesheet" href="round-view.css?v=18">
 </head>
@@ -31,14 +32,19 @@
     <footer class="game-footer"><span id="level-name">轻轻开始</span><span id="pace-note">不限次数，误点没关系。</span></footer>
   </main>
   <dialog id="guide-dialog" class="guide-dialog" aria-labelledby="guide-title" aria-describedby="guide-note">
-    <p class="guide-mode" id="guide-mode"></p>
-    <h2 id="guide-title" tabindex="-1"></h2>
-    <ol id="guide-steps"></ol>
-    <p id="guide-note">用时只是记录，没有倒计时。查看说明、选关或切到后台时暂停计时。</p>
-    <button id="guide-start" class="primary-button">开始玩</button>
-    <p class="guide-return">以后可点右上角「玩法说明」重看。</p>
+    <div class="guide-scroll" id="guide-scroll">
+      <p class="guide-mode" id="guide-mode"></p>
+      <h2 id="guide-title" tabindex="-1"></h2>
+      <div id="guide-demo" aria-label="玩法动画示范"></div>
+      <ol id="guide-steps"></ol>
+      <p id="guide-note">用时只是记录，没有倒计时。看说明、选关或切到后台时暂停。</p>
+    </div>
+    <div class="guide-actions">
+      <button id="guide-start" class="primary-button">开始玩</button>
+      <p class="guide-return">不用看完也能开始，以后可点「玩法说明」重看。</p>
+    </div>
   </dialog>
   <dialog id="level-dialog" aria-labelledby="level-dialog-title"><div class="dialog-top"><h2 id="level-dialog-title">选一关，慢慢玩。</h2><button id="level-close" class="icon-button" aria-label="关闭关卡选择"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button></div><div id="level-grid"></div><p>每一关都能直接开始，已计时的关卡显示最佳用时。</p><p id="record-note">记录保存在当前浏览器，换设备各自保存。</p></dialog>
-  <script type="module" src="app.js?v=20"></script>
+  <script type="module" src="app.js?v=21"></script>
 </body>
 </html>
