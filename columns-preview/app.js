@@ -3,7 +3,7 @@ import { expireNudges } from './feedback.js?v=5';
 import { restoreProgress, PROGRESS_REVISION } from './progress.js?v=5';
 import { hitPieceAt, exitPath } from './geometry.js?v=5';
 import { restoreSearchProgress, SEARCH_PROGRESS_REVISION } from './search-progress.js?v=8';
-import { CUBE_LEVEL_COUNT, createCubeLevel, availableCubeMoves, tryCubeMove } from './cube-engine.js?v=18';
+import { CUBE_LEVEL_COUNT, createCubeLevel, availableCubeMoves, tryCubeMove } from './cube-engine.js?v=20';
 import { restoreCubeProgress, CUBE_PROGRESS_REVISION } from './cube-progress.js?v=18';
 import { createShapeView } from './shape-view.js?v=19';
 import { restorePlayHistory, recordCompletion, formatDuration, createPlayTimer } from './play-history.js?v=2';
@@ -13,15 +13,23 @@ import { createSession, restoreSession } from './play-session.js?v=1';
 import { createFlatControls } from './flat-controls.js?v=1';
 import { clampView } from './view-transform.js?v=19';
 import { createDepartureBarrier } from './departure-barrier.js?v=1';
+import { migrateColumnCampaign, columnCampaignSessionKey, readColumnCampaignSession } from './column-campaign-migration.js?v=1';
+import { mergeCompleted, mergePlayHistories } from './play-record-merge.js?v=1';
 
 const $ = id => document.getElementById(id);
 const canvas = $('board'), ctx = canvas.getContext('2d'), piecesEl = $('pieces');
 const viewport = $('board-viewport'), surface = $('board-surface');
-const storeKey = 'clear-a-little-v1';
-const searchStoreKey = 'clear-a-little-search-v1', modeStoreKey = 'clear-a-little-mode';
-const trialColumns = new URLSearchParams(location.search).get('trial') === 'columns';
-const cubeStoreKey = trialColumns ? 'clear-a-little-columns-trial-v1' : 'clear-a-little-cube-v1';
-const historyStoreKey = 'clear-a-little-play-history-v1';
+const legacyStoreKey = 'clear-a-little-v1', legacySearchStoreKey = 'clear-a-little-search-v1', legacyModeStoreKey = 'clear-a-little-mode';
+const storeKey = 'clear-a-little-classic-column100-v1';
+const searchStoreKey = 'clear-a-little-search-column100-v1', modeStoreKey = 'clear-a-little-column100-mode-v1';
+// Previously shared trial=columns links now open the full campaign. The four
+// sample boards and their separate records remain available via columns4.
+const trialColumns = new URLSearchParams(location.search).get('trial') === 'columns4';
+const legacyCubeStoreKey = 'clear-a-little-cube-v1';
+const trialCubeStoreKey = 'clear-a-little-columns-trial-v1';
+const cubeStoreKey = trialColumns ? trialCubeStoreKey : 'clear-a-little-cube-column100-v1';
+const legacyHistoryStoreKey = 'clear-a-little-play-history-v1';
+const historyStoreKey = 'clear-a-little-column100-history-v1';
 const trialHistoryStoreKey = 'clear-a-little-columns-history-v1';
 const dirs = { up: [0, -1], right: [1, 0], down: [0, 1], left: [-1, 0] };
 const names = { up: '上', right: '右', down: '下', left: '左' };
@@ -34,8 +42,14 @@ const reduced = window.matchMedia('(prefers-reduced-motion: reduce)');
 const readProgress = (key, restore) => {
   try { return restore(JSON.parse(localStorage.getItem(key))); } catch { return restore(null); }
 };
-let regularPlayHistory = readProgress(historyStoreKey, restorePlayHistory);
+const readOptional = key => {
+  try { const value = localStorage.getItem(key); return value === null ? null : JSON.parse(value); } catch { return null; }
+};
+const legacyPlayHistory = readProgress(legacyHistoryStoreKey, restorePlayHistory);
 let trialPlayHistory = readProgress(trialHistoryStoreKey, restorePlayHistory);
+const migration = migrateColumnCampaign(readOptional(legacyCubeStoreKey), legacyPlayHistory, readOptional(trialCubeStoreKey), trialPlayHistory);
+const storedHistory = readOptional(historyStoreKey);
+let regularPlayHistory = storedHistory ? restorePlayHistory(storedHistory) : migration.history;
 let playHistory = regularPlayHistory;
 const playTimer = createPlayTimer();
 const departures = createDepartureBarrier();
@@ -58,17 +72,17 @@ const guides = {
   ] },
 };
 const modeProgress = {
-  classic: readProgress(storeKey, saved => restoreProgress(saved, LEVEL_COUNT)),
-  search: readProgress(searchStoreKey, restoreSearchProgress),
-  cube: readProgress(cubeStoreKey, saved => trialColumns ? {
+  classic: restoreProgress(readOptional(storeKey) ?? readOptional(legacyStoreKey), LEVEL_COUNT),
+  search: restoreSearchProgress(readOptional(searchStoreKey) ?? readOptional(legacySearchStoreKey)),
+  cube: trialColumns ? readProgress(cubeStoreKey, saved => ({
     level: saved?.revision === 1 && Number.isInteger(saved.level) ? Math.max(1, Math.min(COLUMN_TRIAL_LEVEL_COUNT, saved.level)) : 1,
     completed: saved?.revision === 1 && Array.isArray(saved.completed) ? [...new Set(saved.completed.filter(n => Number.isInteger(n) && n >= 1 && n <= COLUMN_TRIAL_LEVEL_COUNT))] : [],
     revision: 1,
-  } : restoreCubeProgress(saved)),
+  })) : (readOptional(cubeStoreKey) ? readProgress(cubeStoreKey, restoreCubeProgress) : migration.progress),
 };
 let mode = 'cube';
 try {
-  const savedMode = localStorage.getItem(modeStoreKey);
+  const savedMode = localStorage.getItem(modeStoreKey) ?? localStorage.getItem(legacyModeStoreKey);
   if (['classic', 'search', 'cube'].includes(savedMode)) mode = savedMode;
 } catch {}
 const requestedMode = new URLSearchParams(location.search).get('mode');
@@ -92,10 +106,14 @@ const cubeView = createShapeView({
 });
 
 function save() {
-  const progress = { level, completed: [...completed], revision: isTrialCube() ? 1 : isCube() ? CUBE_PROGRESS_REVISION : isSearch() ? SEARCH_PROGRESS_REVISION : PROGRESS_REVISION };
+  const revision = isTrialCube() ? 1 : isCube() ? CUBE_PROGRESS_REVISION : isSearch() ? SEARCH_PROGRESS_REVISION : PROGRESS_REVISION;
+  const key = isCube() ? cubeStoreKey : isSearch() ? searchStoreKey : storeKey;
+  const prior = readOptional(key);
+  completed = new Set(mergeCompleted(prior?.revision === revision ? prior.completed : [], [...completed], levelCount()));
+  const progress = { level, completed: [...completed], revision };
   modeProgress[mode] = progress;
   try {
-    localStorage.setItem(isCube() ? cubeStoreKey : isSearch() ? searchStoreKey : storeKey, JSON.stringify(progress));
+    localStorage.setItem(key, JSON.stringify(progress));
     localStorage.setItem(modeStoreKey, mode);
   } catch { reportSaveFailure(); }
 }
@@ -106,7 +124,9 @@ function reportSaveFailure() {
 }
 
 function sessionKey() {
-  return `clear-a-little-session-v1-${mode}${isTrialCube() ? '-columns' : ''}-${level}`;
+  if (isCube() && !isTrialCube()) return columnCampaignSessionKey(level);
+  if (isTrialCube()) return `clear-a-little-session-v1-cube-columns-${level}`;
+  return `clear-a-little-column100-session-v1-${mode}-${level}`;
 }
 
 function saveSession() {
@@ -121,8 +141,12 @@ function saveSession() {
 }
 
 function readSession() {
-  try { return restoreSession(initial, JSON.parse(localStorage.getItem(sessionKey())), isCube() ? tryCubeMove : tryMove); }
-  catch { return null; }
+  try {
+    if (isCube() && !isTrialCube()) return readColumnCampaignSession(localStorage, level, initial, tryCubeMove);
+    let value = localStorage.getItem(sessionKey());
+    if (value === null && !isCube()) value = localStorage.getItem(`clear-a-little-session-v1-${mode}-${level}`);
+    return { source: 'current', session: restoreSession(initial, JSON.parse(value), isCube() ? tryCubeMove : tryMove) };
+  } catch { return { source: 'unavailable', session: null }; }
 }
 
 function restingCopy() {
@@ -130,9 +154,11 @@ function restingCopy() {
   return isCube() ? (board?.rules === 'surface' ? '线路会跨面，箭头前方空了才能移走。' : '沿本面出口离开，清空六面过关。') : isSearch() ? '找一条前方空着的箭头，不用着急。' : isTutorial() ? '顺着箭头，把小块移出去。' : '看清方向，一条一条清空。';
 }
 
-function savePlayHistory() {
+function savePlayHistory({ completedLevel } = {}) {
+  const key = isTrialCube() ? trialHistoryStoreKey : historyStoreKey;
+  playHistory = mergePlayHistories(readOptional(key), playHistory, { mode, completedLevel });
   if (isTrialCube()) trialPlayHistory = playHistory; else regularPlayHistory = playHistory;
-  try { localStorage.setItem(isTrialCube() ? trialHistoryStoreKey : historyStoreKey, JSON.stringify(playHistory)); }
+  try { localStorage.setItem(key, JSON.stringify(playHistory)); }
   catch { reportSaveFailure(); }
 }
 
@@ -207,12 +233,13 @@ function updateZoomControl() {
   viewport.classList.toggle('zoomed', !isCube() && zoom > 1);
 }
 
-function setBoard(n, { fresh = false, remember = true } = {}) {
+function setBoard(n, { fresh = false, remember = true, replayFinished = false } = {}) {
   if (remember) saveSession();
   initialized = false;
   clearTimeout(finishTimer); clearTimeout(statusTimer);
   level = n; initial = isTrialCube() ? createColumnTrialLevel(n) : isCube() ? createCubeLevel(n) : isSearch() ? createSearchLevel(n) : createLevel(n);
-  const restored = fresh ? null : readSession();
+  const loaded = fresh ? { source: 'fresh', session: null } : readSession();
+  const restored = replayFinished && loaded.session?.finished ? null : loaded.session;
   board = restored?.board || initial;
   history = restored?.history || []; moveIds = restored?.moves || []; hintUses = restored?.hintUses || 0;
   flights = []; sparks = []; nudges.clear(); clearHint(); departures.clear(); zoom = 1; flatInput?.reset();
@@ -253,7 +280,8 @@ function setBoard(n, { fresh = false, remember = true } = {}) {
   initialized = true;
   if (!playHistory.guides[mode]) showGuide(true);
   if (restored?.finished) finish();
-  else if (restored?.moves.length) message('已接着上次的进度，撤回也保留了。');
+  else if (restored?.moves.length) message(loaded.source === 'trial' ? '已接着之前试玩的进度，撤回也保留了。' : '已接着上次的进度，撤回也保留了。');
+  else if (loaded.source === 'replaced') message('这一关已换新造型，旧进度已保留，新关从头开始。');
   syncTimer();
   saveSession();
 }
@@ -350,7 +378,7 @@ function move(id) {
   departures.add(departureDuration);
   if (!board.pieces.length) {
     playHistory = recordCompletion(playHistory, mode, level, playTimer.complete(), { hintUses });
-    savePlayHistory(); syncTimer();
+    savePlayHistory({ completedLevel: level }); syncTimer();
     completed.add(level); save();
     finishTimer = setTimeout(finish, departures.remaining() + 30);
   }
@@ -421,7 +449,7 @@ function drawPiece(piece, points, alpha = 1, time = 0, moving = false) {
   } else {
     const width = Math.max(isSearch() ? 1.5 : 1.35, layout.cell * .125), arrow = layout.cell * (isSearch() ? .43 : .29);
     if (hinting) {
-      ctx.globalAlpha = alpha * (reduced.matches ? .8 : .5 + .25 * Math.sin(time / 140));
+      ctx.globalAlpha = alpha * .8;
       ctx.strokeStyle = '#adc49c'; ctx.lineWidth = width + Math.max(3, layout.cell * .2);
       trace(pixels); ctx.stroke(); arrowHead(head, direction, arrow);
       ctx.globalAlpha = alpha;
@@ -466,13 +494,13 @@ function draw(time) {
   if (hintId) {
     const piece = board.pieces.find(piece => piece.id === hintId);
     if (piece) {
-      const [head] = pixelPoints([piece.cells.at(-1)]), radius = 14 + (reduced.matches ? 0 : 1.5 * Math.sin(time / 230));
+      const [head] = pixelPoints([piece.cells.at(-1)]), radius = 14;
       ctx.beginPath(); ctx.arc(head[0], head[1], radius, 0, Math.PI * 2);
       ctx.strokeStyle = '#fffdf6'; ctx.lineWidth = 5; ctx.stroke();
       ctx.strokeStyle = '#9a5431'; ctx.lineWidth = 2.5; ctx.stroke();
     }
   }
-  if (flights.length || sparks.length || nudges.size || (hintId && !reduced.matches)) requestDraw();
+  if (flights.length || sparks.length || nudges.size) requestDraw();
 }
 
 function resize() {
@@ -527,7 +555,10 @@ $('undo').addEventListener('click', () => {
   if (!isCube()) departures.clear();
   message('退一步也很好。'); refresh(); requestDraw(); saveSession();
 });
-$('restart').addEventListener('click', () => setBoard(level, { fresh: true, remember: false }));
+$('restart').addEventListener('click', () => {
+  if (moveIds.length && !window.confirm('重新开始会清除本关当前进度，确定重新开始吗？')) return;
+  setBoard(level, { fresh: true, remember: false });
+});
 function clearHint() {
   hintId = null; $('hint').setAttribute('aria-pressed', 'false'); $('hint-label').textContent = '给点提示';
 }
@@ -550,14 +581,17 @@ $('hint').addEventListener('click', () => {
 });
 $('next').addEventListener('click', () => {
   const next = level === levelCount() ? 1 : level + 1;
-  setBoard(next, { fresh: completed.has(next) });
+  setBoard(next, { replayFinished: true });
 });
 $('mode-search').addEventListener('click', () => selectMode('search'));
 $('mode-cube').addEventListener('click', () => selectMode('cube'));
 $('mode-classic').addEventListener('click', () => selectMode('classic'));
 $('cube-prev').addEventListener('click', () => cubeView.turn(-1));
 $('cube-next').addEventListener('click', () => cubeView.turn(1));
-$('cube-reset').addEventListener('click', () => cubeView.reset());
+$('cube-reset').addEventListener('click', () => { clearHint(); cubeView.reset(); message(restingCopy()); });
+$('cube-stage').addEventListener('keydown', event => {
+  if (event.key === 'Home' && hintId) { clearHint(); message(restingCopy()); }
+}, true);
 $('sound').addEventListener('click', () => {
   sound = !sound; $('sound').setAttribute('aria-pressed', String(sound));
   $('sound').setAttribute('aria-label', sound ? '关闭声音' : '开启声音'); if (sound) tone();
@@ -575,7 +609,7 @@ $('level-open').addEventListener('click', () => {
     button.className = [n === level ? 'current' : '', completed.has(n) ? 'complete' : ''].join(' ');
     button.setAttribute('aria-label', `第 ${n} 关${completed.has(n) ? '，已完成' : ''}${record ? `，最佳用时 ${formatDuration(record.bestMs)}，上次用时 ${formatDuration(record.latestMs)}` : ''}`);
     if (n === level) button.setAttribute('aria-current', 'true');
-    button.addEventListener('click', () => { $('level-dialog').close(); setBoard(n, { fresh: completed.has(n) }); }); grid.append(button);
+    button.addEventListener('click', () => { $('level-dialog').close(); setBoard(n, { replayFinished: true }); }); grid.append(button);
   }
   $('level-dialog').showModal(); syncTimer(); grid.querySelector('[aria-current]')?.scrollIntoView({ block: 'nearest' });
 });
