@@ -1,0 +1,15 @@
+.shape-stage,.shape-layer{position:absolute;inset:0}
+.round-stage{position:absolute;inset:0;perspective:none;touch-action:none;cursor:grab;outline:none}
+.round-stage:focus-visible{outline:2px solid #738267;outline-offset:-8px;border-radius:18px}
+.round-canvas{position:absolute;inset:0;display:block;width:100%;height:100%;touch-action:none}
+.round-shadow{position:absolute;left:22%;right:22%;bottom:5%;height:9%;border-radius:50%;background:radial-gradient(ellipse,#5e70522c,transparent 70%);pointer-events:none}
+.round-stage.is-closeup .round-shadow{opacity:0}
+.round-stage.is-dragging,.round-stage.is-dragging *{cursor:grabbing!important}
+.round-piece-target,.round-a11y-status{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap;border:0}
+.round-notice{position:absolute;inset:35% 10% auto;margin:0;text-align:center;color:#59634f;font:14px/1.7 inherit}
+
+.round-viewport{position:absolute;inset:0;transform-origin:50% 50%;will-change:transform;pointer-events:none}
+.round-canvas{pointer-events:auto}
+.round-hint-marker{position:absolute;left:50%;top:50%;width:32px;height:32px;margin:-16px;border:3px solid #e9a73b;border-radius:50%;box-shadow:0 0 0 2px #fff9,0 2px 8px #3b342544;pointer-events:none;z-index:2}
+.round-hint-marker::after{content:"";position:absolute;right:-9px;top:-9px;width:10px;height:10px;border-top:3px solid #946224;border-right:3px solid #946224;transform:rotate(180deg)}
+.round-hint-marker[hidden]{display:none}
