@@ -1,4 +1,4 @@
-.cube-stage{position:absolute;inset:0;perspective:var(--cube-perspective,1024px);perspective-origin:50% 50%;touch-action:pinch-zoom;cursor:grab;user-select:none;-webkit-user-select:none;outline:none;-webkit-tap-highlight-color:transparent}
+.cube-stage{position:absolute;inset:0;touch-action:none;cursor:grab;user-select:none;-webkit-user-select:none;outline:none;-webkit-tap-highlight-color:transparent}
 .cube-stage:focus-visible{outline:2px solid #738267;outline-offset:-8px;border-radius:18px}
 .cube-body{position:absolute;left:50%;top:50%;width:var(--cube-edge,170px);height:var(--cube-edge,170px);margin-left:calc(var(--cube-edge,170px)/-2);margin-top:calc(var(--cube-edge,170px)/-2);transform-style:preserve-3d;pointer-events:none;will-change:transform}
 .cube-face{position:absolute;inset:0;backface-visibility:hidden;-webkit-backface-visibility:hidden;border:1px solid #c4cdbb;background:#eef0e4;box-shadow:inset 0 0 0 .5px #f5f3eb88}
@@ -34,3 +34,15 @@
 .cube-stage[data-surface=true] .cube-face{border:0;box-shadow:none;background:transparent}
 .cube-stage[data-surface=true] .cube-face>svg{inset:0;width:100%;height:100%}
 .cube-piece[data-visible=false] .cube-hit-line{pointer-events:none}
+
+/* The inner projection retains CSS3D depth; the outer wrapper scales the
+   already projected scene without changing its camera or occlusion rays. */
+.cube-viewport,.cube-projection{position:absolute;inset:0;pointer-events:none}
+.cube-viewport{transform-origin:50% 50%;will-change:transform}
+.cube-projection{perspective:var(--cube-perspective,1024px);perspective-origin:50% 50%}
+.cube-hint-marker{position:absolute;left:50%;top:50%;width:32px;height:32px;margin:-16px;border:3px solid #e9a73b;border-radius:50%;box-shadow:0 0 0 2px #fff9,0 2px 8px #3b342544;pointer-events:none;z-index:2}
+.cube-hint-marker::after{content:"";position:absolute;right:-9px;top:-9px;width:10px;height:10px;border-top:3px solid #946224;border-right:3px solid #946224;transform:rotate(180deg)}
+.cube-hint-marker[hidden]{display:none}
+.cube-piece.is-hinted .cube-arrow-line{stroke:#74531e}
+.cube-piece.is-hinted .cube-arrow-head{fill:#74531e}
+.cube-piece.is-hinted .cube-arrow-halo{stroke:#e9b659;opacity:.95;stroke-width:.52}

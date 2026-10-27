@@ -1,8 +1,10 @@
 import {
   INITIAL_POSE, initialPoseForBoard, poseForFace, closestPatch, turnPatch, sceneFrame, patchFacing, surfaceSheets,
-  surfacePointVisible, surfacePointAtScreen, findVisiblePatchPose, patchCenter, startCubeGesture, updateCubeGesture, tappedPiece,
+  projectWorldPoint, surfacePointVisible, surfacePointAtScreen, findVisiblePatchPose, patchCenter, startCubeGesture, updateCubeGesture, tappedPiece,
 } from './cube-view-geometry.js?v=18';
 import { FACE_BASES, pieceRoute, routeSegments, worldPoint } from './surface-topology.js?v=18';
+
+import { clampView, startPinch, updatePinch } from './view-transform.js?v=19';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 const DIRECTIONS = { up: [0, -1], right: [1, 0], down: [0, 1], left: [-1, 0] };
@@ -23,12 +25,13 @@ export function createCubeView({ host, onMove, onPoseChange = () => {} }) {
   const doc = host.ownerDocument, win = doc.defaultView;
   const reduced = win.matchMedia('(prefers-reduced-motion: reduce)');
   const listeners = new AbortController(), options = { signal: listeners.signal };
-  const faces = new Map(), skins = [], pieceNodes = new Map(), departures = new Map(), nudges = new Map(), pointers = new Set();
+  const faces = new Map(), skins = [], pieceNodes = new Map(), departures = new Map(), nudges = new Map(), pointers = new Map();
   const viewId = ++viewNumber;
   let currentBoard = null, active = false, closeup = false, hintId = null, selectedFace = 'front';
   let pose = { ...INITIAL_POSE }, gesture = null, dimensions = { width: 320, height: 320 };
   let frame = sceneFrame(null, pose, dimensions), poseFrame = 0, destroyed = false, shapeSignature = '';
   let visibilityState = '', visibilityRevision = 0;
+  let view = { scale: 1, x: 0, y: 0 }, pinch = null, multiTouch = false;
 
   const element = (tag, className) => {
     const node = doc.createElement(tag); if (className) node.className = className; return node;
@@ -40,15 +43,19 @@ export function createCubeView({ host, onMove, onPoseChange = () => {} }) {
   };
   const shadow = element('div', 'cube-ground-shadow'); shadow.setAttribute('aria-hidden', 'true');
   const body = element('div', 'cube-body');
+  // Flatten the complete projected scene once, then scale it in screen space.
+  const viewport = element('div', 'cube-viewport'), projection = element('div', 'cube-projection');
+  const hintMarker = element('div', 'cube-hint-marker'); hintMarker.hidden = true; hintMarker.setAttribute('aria-hidden', 'true');
+  projection.append(body); viewport.append(shadow, projection);
   host.classList.add('cube-stage'); host.setAttribute('role', 'group');
   host.setAttribute('aria-label', '可旋转的立体箭头组合');
   host.setAttribute('aria-keyshortcuts', 'ArrowLeft ArrowRight ArrowUp ArrowDown Home');
-  host.replaceChildren(shadow, body);
+  host.replaceChildren(viewport, hintMarker);
 
   const sideOf = faceId => faces.get(faceId)?.side || 'front';
   const headFace = piece => pieceRoute(piece).at(-1)?.face;
   const targetPose = (faceId, overview = false) => (overview ? OVERVIEW_POSES : null)?.[sideOf(faceId)] || poseForFace(sideOf(faceId));
-  const notifyPose = () => onPoseChange({ closeup, face: selectedFace });
+  const notifyPose = () => onPoseChange({ closeup, zoom: view.scale, face: selectedFace });
 
   function headPoints(piece) {
     const head = pieceRoute(piece).at(-1), [hx, hy] = [head.x + .5, head.y + .5], [dx, dy] = DIRECTIONS[piece.dir];
@@ -59,14 +66,16 @@ export function createCubeView({ host, onMove, onPoseChange = () => {} }) {
     const hinted = pieceNodes.get(hintId)?.piece;
     return hinted && headFace(hinted) === selectedFace ? headPoints(hinted) : [patchCenter(currentBoard, selectedFace)];
   }
-  function visibleTarget(preferred, points, forceCloseup = closeup) {
+  function visibleTarget(preferred, points, forceCloseup = false) {
     const settings = { ...dimensions, preferredPose: preferred, closeup: forceCloseup };
     const result = findVisiblePatchPose(currentBoard, selectedFace, points, settings);
     return result?.pose || preferred;
   }
 
   function updateFrame() {
-    frame = sceneFrame(currentBoard, pose, { ...dimensions, closeupFace: closeup ? selectedFace : null });
+    frame = sceneFrame(currentBoard, pose, dimensions);
+    view = clampView(view, dimensions); closeup = view.scale > 1;
+    viewport.style.transform = `translate(${view.x}px,${view.y}px) scale(${view.scale})`;
     host.style.setProperty('--cube-edge', `${frame.edge}px`);
     host.style.setProperty('--cube-perspective', `${frame.perspective}px`);
     host.classList.toggle('is-closeup', closeup);
@@ -118,7 +127,18 @@ export function createCubeView({ host, onMove, onPoseChange = () => {} }) {
       const center = skin.center.map((value, axis) => value * edge - normal[axis] * .25);
       skin.surface.style.transform = `matrix3d(${[...right, 0, ...down, 0, ...normal, 0, ...center, 1].join(',')})`;
     }
-    host.dataset.face = selectedFace; syncVisibility();
+    host.dataset.face = selectedFace; syncVisibility(); syncMarker();
+  }
+
+  function syncMarker() {
+    const piece = pieceNodes.get(hintId)?.piece, head = piece && pieceRoute(piece).at(-1);
+    const points = piece && headPoints(piece), side = faces.get(head?.face)?.side;
+    hintMarker.hidden = !active || !piece || !points.every(point => surfacePointVisible(currentBoard, point, side, pose, frame));
+    if (hintMarker.hidden) return;
+    const tip = projectWorldPoint(points[1], pose, frame), x = tip[0] * view.scale + view.x, y = tip[1] * view.scale + view.y;
+    hintMarker.hidden = Math.abs(x) > dimensions.width / 2 - 18 || Math.abs(y) > dimensions.height / 2 - 18;
+    hintMarker.style.transform = `translate(${x}px,${y}px)`;
+    hintMarker.dataset.piece = piece.id;
   }
 
   function measure() {
@@ -141,7 +161,7 @@ export function createCubeView({ host, onMove, onPoseChange = () => {} }) {
     };
     poseFrame = win.requestAnimationFrame(animate);
   }
-  function cancelGesture() { gesture = null; pointers.clear(); host.classList.remove('is-dragging'); }
+  function cancelGesture() { gesture = null; pinch = null; pointers.clear(); multiTouch = false; host.classList.remove('is-dragging'); }
   function clearDeparture(id) {
     const flight = departures.get(id); if (!flight) return;
     win.cancelAnimationFrame(flight.frame); flight.fragments.forEach(node => node.group.remove()); departures.delete(id);
@@ -162,6 +182,7 @@ export function createCubeView({ host, onMove, onPoseChange = () => {} }) {
       for (const fragment of node.fragments) fragment.group.classList.toggle('is-hinted', hinted);
       node.hinted = hinted;
     }
+    syncMarker();
   }
 
   function drawFragment(node, segment) {
@@ -202,7 +223,7 @@ export function createCubeView({ host, onMove, onPoseChange = () => {} }) {
   function buildFaces(board) {
     const signature = JSON.stringify([board.id, board.rules, board.cubes, board.faces]);
     if (signature === shapeSignature) return;
-    cancelGesture(); stopPoseAnimation(); closeup = false; pose = initialPoseForBoard(board);
+    cancelGesture(); stopPoseAnimation(); closeup = false; view = { scale: 1, x: 0, y: 0 }; pose = initialPoseForBoard(board);
     selectedFace = board.faces.find(face => (face.side || face.id) === 'front')?.id || board.faces[0]?.id;
     clearDepartures(); pieceNodes.clear(); faces.clear(); skins.length = 0; body.replaceChildren(); shapeSignature = signature; visibilityState = '';
     host.dataset.surface = String(board.rules === 'surface');
@@ -281,7 +302,7 @@ export function createCubeView({ host, onMove, onPoseChange = () => {} }) {
 
   function reset() {
     cancelGesture(); stopPoseAnimation(); clearDepartures(); clearNudges();
-    closeup = false; hintId = null; selectedFace = currentBoard?.faces.find(face => (face.side || face.id) === 'front')?.id || 'front'; pose = initialPoseForBoard(currentBoard);
+    closeup = false; view = { scale: 1, x: 0, y: 0 }; hintId = null; selectedFace = currentBoard?.faces.find(face => (face.side || face.id) === 'front')?.id || 'front'; pose = initialPoseForBoard(currentBoard);
     syncHints(); measure(); notifyPose();
   }
   function turn(step) {
@@ -289,22 +310,52 @@ export function createCubeView({ host, onMove, onPoseChange = () => {} }) {
     cancelGesture(); selectedFace = turnPatch(currentBoard, selectedFace, step);
     animatePose(visibleTarget(targetPose(selectedFace, !closeup), selectedPoints())); notifyPose();
   }
+  function findHintPose(piece) {
+    const faceId = headFace(piece), points = headPoints(piece), preferredPose = targetPose(faceId);
+    const nearby = findVisiblePatchPose(currentBoard, faceId, points, { ...dimensions, preferredPose });
+    if (nearby) return nearby;
+    // Deep recesses can require viewing from the opposite side of a canonical
+    // face. Search the remaining orbit using the same opaque-shell ray tests.
+    for (let pitch = -90; pitch <= 90; pitch += 15) for (let yaw = -180; yaw < 180; yaw += 15) {
+      const result = findVisiblePatchPose(currentBoard, faceId, points, { ...dimensions, preferredPose: { pitch, yaw }, search: false });
+      if (result) return result;
+    }
+    return null;
+  }
+  function preferredHint(ids) {
+    const supplied = ids.filter(id => pieceNodes.has(id));
+    const visible = supplied.find(id => {
+      const piece = pieceNodes.get(id).piece, side = faces.get(headFace(piece))?.side;
+      return headPoints(piece).every(point => {
+        if (!surfacePointVisible(currentBoard, point, side, pose, frame)) return false;
+        const screen = projectWorldPoint(point, pose, frame);
+        return Math.abs(screen[0] * view.scale + view.x) < dimensions.width / 2 - 20 && Math.abs(screen[1] * view.scale + view.y) < dimensions.height / 2 - 20;
+      });
+    });
+    return visible || supplied.find(id => {
+      const piece = pieceNodes.get(id).piece;
+      return findHintPose(piece);
+    }) || null;
+  }
   function focusPiece(id) {
     const piece = currentBoard?.pieces.find(entry => entry.id === id);
     if (!piece || !active || destroyed) return;
-    cancelGesture(); hintId = id; selectedFace = headFace(piece); syncHints();
-    const target = targetPose(selectedFace), points = headPoints(piece);
-    if (!closeup) closeup = !findVisiblePatchPose(currentBoard, selectedFace, points, { ...dimensions, preferredPose: target, search: false });
-    animatePose(closeup ? visibleTarget(target, points, true) : target); notifyPose();
+    cancelGesture(); stopPoseAnimation(); hintId = id; selectedFace = headFace(piece);
+    const points = headPoints(piece);
+    const result = findHintPose(piece);
+    if (result) {
+      pose = { ...result.pose, yaw: nearestYaw(result.pose.yaw, pose.yaw) }; updateFrame();
+      const tip = projectWorldPoint(points[1], pose, frame);
+      view = clampView({ ...view, x: -tip[0] * view.scale, y: -tip[1] * view.scale }, dimensions);
+    }
+    syncHints(); applyPose(); notifyPose();
   }
-  function setCloseup(enabled) {
+  function setZoom(scale) {
     if (!active || destroyed || !currentBoard) return;
-    cancelGesture(); stopPoseAnimation();
-    if (enabled && !closeup && !faces.get(selectedFace)?.visible) selectedFace = closestPatch(currentBoard, pose, frame);
-    closeup = Boolean(enabled);
-    if (closeup) { const target = visibleTarget(targetPose(selectedFace), selectedPoints(), true); pose = { ...target, yaw: nearestYaw(target.yaw, pose.yaw) }; }
-    measure(); if (!closeup) animatePose(targetPose(selectedFace, true)); notifyPose();
+    cancelGesture(); stopPoseAnimation(); view = clampView({ ...view, scale }, dimensions);
+    measure(); notifyPose();
   }
+  function setCloseup(enabled) { setZoom(enabled ? 3 : 1); }
   function feedback(id) {
     const node = pieceNodes.get(id); if (!node || !active || destroyed) return;
     clearNudge(id); for (const fragment of node.fragments) fragment.group.classList.add('is-blocked');
@@ -343,12 +394,13 @@ export function createCubeView({ host, onMove, onPoseChange = () => {} }) {
       if (t < 1) flight.frame = win.requestAnimationFrame(animate); else clearDeparture(piece.id);
     };
     flight.frame = win.requestAnimationFrame(animate);
+    return duration;
   }
 
   function setActive(enabled) {
     if (destroyed) return;
     active = Boolean(enabled); host.hidden = !active; host.inert = !active; host.tabIndex = active ? 0 : -1; host.setAttribute('aria-hidden', String(!active));
-    if (!active) { cancelGesture(); stopPoseAnimation(); clearDepartures(); clearNudges(); hintId = null; closeup = false; syncHints(); }
+    if (!active) { cancelGesture(); stopPoseAnimation(); clearDepartures(); clearNudges(); hintId = null; syncHints(); }
     measure();
   }
   function targetFragment(target) {
@@ -363,45 +415,68 @@ export function createCubeView({ host, onMove, onPoseChange = () => {} }) {
     if (!actionable(id, index)) return false;
     const fragment = pieceNodes.get(id)?.fragments[index], face = faces.get(fragment?.segment.face);
     if (!face) return false;
-    const rect = host.getBoundingClientRect(), screen = [event.clientX - rect.left - rect.width / 2, event.clientY - rect.top - rect.height / 2];
+    const rect = host.getBoundingClientRect(), screen = [(event.clientX - rect.left - rect.width / 2 - view.x) / view.scale, (event.clientY - rect.top - rect.height / 2 - view.y) / view.scale];
     const point = surfacePointAtScreen(currentBoard, fragment.segment.face, screen, pose, frame);
     return Boolean(point && surfacePointVisible(currentBoard, point, face.side, pose, frame));
   }
+  const localPoint = event => {
+    const rect = host.getBoundingClientRect();
+    return { x: event.clientX - (rect.left || 0) - rect.width / 2, y: event.clientY - (rect.top || 0) - rect.height / 2 };
+  };
   host.addEventListener('pointerdown', event => {
     if (!active || (event.pointerType === 'mouse' && event.button !== 0)) return;
-    pointers.add(event.pointerId);
-    if (pointers.size > 1) { if (gesture) gesture = updateCubeGesture(gesture, { x: event.clientX, y: event.clientY }, pointers.size); host.classList.remove('is-dragging'); return; }
-    stopPoseAnimation(); const { id, index } = targetFragment(event.target);
-    gesture = startCubeGesture({ x: event.clientX, y: event.clientY, pointerId: event.pointerId, pieceId: pointerActionable(id, index, event) ? id : null, pose }); gesture.fragmentIndex = index;
+    pointers.set(event.pointerId, localPoint(event));
     try { host.setPointerCapture(event.pointerId); } catch {}
-  }, options);
+    stopPoseAnimation();
+    if (pointers.size > 1) {
+      multiTouch = true; gesture = null; pinch = pointers.size === 2 ? startPinch([...pointers.values()], view) : null;
+      host.classList.remove('is-dragging'); event.preventDefault(); return;
+    }
+    if (multiTouch) return;
+    const { id, index } = targetFragment(event.target);
+    gesture = startCubeGesture({ x: event.clientX, y: event.clientY, pointerId: event.pointerId, pieceId: pointerActionable(id, index, event) ? id : null, pose }); gesture.fragmentIndex = index;
+  }, { ...options, passive: false });
   host.addEventListener('pointermove', event => {
+    if (!pointers.has(event.pointerId)) return;
+    pointers.set(event.pointerId, localPoint(event));
+    if (multiTouch) {
+      if (pointers.size === 2 && pinch) { view = updatePinch(pinch, [...pointers.values()], dimensions); applyPose(); notifyPose(); }
+      event.preventDefault(); return;
+    }
     if (!gesture || event.pointerId !== gesture.pointerId) return;
-    const wasDragging = gesture.dragging;
     gesture = updateCubeGesture(gesture, { x: event.clientX, y: event.clientY }, pointers.size);
     if (gesture.canceled || !gesture.dragging) return;
-    if (!wasDragging && closeup) { closeup = false; measure(); notifyPose(); }
     host.classList.add('is-dragging'); pose = gesture.pose; applyPose(); event.preventDefault();
   }, { ...options, passive: false });
-  host.addEventListener('pointerup', event => {
-    pointers.delete(event.pointerId); if (!gesture || event.pointerId !== gesture.pointerId) return;
-    const finished = updateCubeGesture(gesture, { x: event.clientX, y: event.clientY }, 1); gesture = null; host.classList.remove('is-dragging');
+  function finishPointer(event, canceled = false) {
+    pointers.delete(event.pointerId);
+    if (multiTouch) {
+      gesture = null;
+      pinch = pointers.size === 2 ? startPinch([...pointers.values()], view) : null;
+      if (!pointers.size) multiTouch = false;
+      host.classList.remove('is-dragging'); return;
+    }
+    if (!gesture || event.pointerId !== gesture.pointerId) return;
+    const finished = canceled ? null : updateCubeGesture(gesture, { x: event.clientX, y: event.clientY }, 1);
+    gesture = null; host.classList.remove('is-dragging');
+    if (!finished) return;
     const id = tappedPiece(finished);
     if (finished.dragging && !finished.canceled) { pose = finished.pose; selectedFace = closestPatch(currentBoard, pose, frame); applyPose(); notifyPose(); }
     if (id && pointerActionable(id, finished.fragmentIndex, event)) onMove(id);
-  }, options);
-  host.addEventListener('pointercancel', event => { pointers.delete(event.pointerId); if (gesture?.pointerId === event.pointerId) gesture = null; host.classList.remove('is-dragging'); }, options);
-  host.addEventListener('lostpointercapture', event => { if (gesture?.pointerId === event.pointerId) gesture = null; pointers.delete(event.pointerId); host.classList.remove('is-dragging'); }, options);
+  }
+  host.addEventListener('pointerup', event => finishPointer(event), options);
+  host.addEventListener('pointercancel', event => finishPointer(event, true), options);
+  host.addEventListener('lostpointercapture', event => finishPointer(event, true), options);
   host.addEventListener('click', event => {
-    if (event.detail !== 0) return;
+    if (event.detail !== 0 || multiTouch || pointers.size) return;
     const { id, index } = targetFragment(event.target); if (id && actionable(id, index)) onMove(id);
   }, options);
   host.addEventListener('keydown', event => {
-    if (!active) return; const { id, index } = targetFragment(event.target);
+    if (!active || multiTouch || pointers.size) return; const { id, index } = targetFragment(event.target);
     if ((event.key === 'Enter' || event.key === ' ') && id) { event.preventDefault(); if (!event.repeat && actionable(id, index)) onMove(id); return; }
     if (event.key === 'Home') { event.preventDefault(); reset(); return; }
     if (!['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(event.key)) return;
-    event.preventDefault(); cancelGesture(); stopPoseAnimation(); if (closeup) closeup = false;
+    event.preventDefault(); cancelGesture(); stopPoseAnimation();
     pose = { pitch: Math.max(-90, Math.min(90, pose.pitch + (event.key === 'ArrowUp' ? 18 : event.key === 'ArrowDown' ? -18 : 0))), yaw: pose.yaw + (event.key === 'ArrowLeft' ? -22 : event.key === 'ArrowRight' ? 22 : 0) };
     selectedFace = closestPatch(currentBoard, pose, frame); applyPose(); notifyPose();
   }, options);
@@ -410,5 +485,5 @@ export function createCubeView({ host, onMove, onPoseChange = () => {} }) {
     if (destroyed) return;
     cancelGesture(); stopPoseAnimation(); clearDepartures(); clearNudges(); observer.disconnect(); listeners.abort(); destroyed = true; host.replaceChildren(); host.classList.remove('cube-stage', 'is-closeup', 'is-dragging');
   }
-  return { render, reset, turn, focusPiece, setCloseup, feedback, playExit, setActive, destroy };
+  return { render, reset, turn, focusPiece, setCloseup, setZoom, preferredHint, feedback, playExit, setActive, destroy };
 }

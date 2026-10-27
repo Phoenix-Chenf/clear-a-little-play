@@ -20,12 +20,18 @@ export function restorePlayHistory(saved) {
       if (!own(record, 'latestMs') || !own(record, 'bestMs')) continue;
       if (!isDuration(record.latestMs) || !isDuration(record.bestMs) || record.bestMs > record.latestMs) continue;
       restored.times[mode][level] = { latestMs: record.latestMs, bestMs: record.bestMs };
+      if (own(record, 'hintUses') && Number.isSafeInteger(record.hintUses) && record.hintUses >= 0) {
+        restored.times[mode][level].hintUses = record.hintUses;
+      }
+      if (own(record, 'unassistedBestMs') && isDuration(record.unassistedBestMs) && record.unassistedBestMs >= record.bestMs) {
+        restored.times[mode][level].unassistedBestMs = record.unassistedBestMs;
+      }
     }
   }
   return restored;
 }
 
-export function recordCompletion(state, mode, level, elapsedMs) {
+export function recordCompletion(state, mode, level, elapsedMs, options = {}) {
   const restored = restorePlayHistory(state);
   if (!modes.includes(mode) || !Number.isInteger(level) || level < 1 || level > 100) return restored;
   if (typeof elapsedMs !== 'number' || !Number.isFinite(elapsedMs) || elapsedMs <= 0) return restored;
@@ -36,6 +42,12 @@ export function recordCompletion(state, mode, level, elapsedMs) {
     latestMs,
     bestMs: previous ? Math.min(previous.bestMs, latestMs) : latestMs,
   };
+  if (Number.isSafeInteger(options.hintUses) && options.hintUses >= 0) {
+    const record = restored.times[mode][level];
+    record.hintUses = options.hintUses;
+    if (previous?.unassistedBestMs) record.unassistedBestMs = previous.unassistedBestMs;
+    if (!options.hintUses) record.unassistedBestMs = Math.min(record.unassistedBestMs || latestMs, latestMs);
+  }
   return restored;
 }
 
@@ -59,9 +71,9 @@ export function createPlayTimer(now = () => performance.now()) {
   }
 
   return {
-    reset() {
-      accumulated = 0;
-      finished = false;
+    reset(elapsedMs = 0, completed = false) {
+      accumulated = Number.isFinite(elapsedMs) && elapsedMs >= 0 && elapsedMs <= Number.MAX_SAFE_INTEGER ? elapsedMs : 0;
+      finished = Boolean(completed);
       startedAt = now();
     },
     setPaused(value) {

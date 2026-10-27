@@ -18,9 +18,9 @@ dialog[open]{display:flex;flex-direction:column}
 .zoom-button svg{width:17px;height:17px}
 .zoom-button:hover{background:#e7eadf}
 .zoom-button[aria-pressed=true]{background:#e4e9dc}
-.board-viewport{position:absolute;inset:0;overflow:auto;overscroll-behavior:contain;touch-action:pan-y pinch-zoom;scrollbar-width:none}
+.board-viewport{position:absolute;inset:0;overflow:auto;overscroll-behavior:contain;touch-action:none;scrollbar-width:none}
 .board-viewport::-webkit-scrollbar{display:none}
-.board-viewport.zoomed{touch-action:pinch-zoom;cursor:grab}
+.board-viewport.zoomed{touch-action:none;cursor:grab}
 .board-viewport.zoomed:active{cursor:grabbing}
 .board-surface{position:relative;min-width:100%;min-height:100%;user-select:none;-webkit-user-select:none}
 .board-surface canvas{pointer-events:none;touch-action:auto}
@@ -54,6 +54,12 @@ body[data-mode=cube] .feedback-line{min-height:38px}
 .finish-record{margin:0 0 17px;text-align:center;font-variant-numeric:tabular-nums}
 .finish .finish-record p{margin:0;font-size:16px;line-height:1.7;color:var(--ink)}
 .finish .finish-record p+p{font-size:11px;color:var(--quiet)}
+.trial-note{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:10px 2px 9px;font-size:11px;line-height:1.7;color:var(--quiet)}
+.trial-note a{color:var(--accent);text-underline-offset:3px;padding:7px 0}
+.save-status{margin:12px 0 0;color:#86512e;font-size:12px;line-height:1.6}
+.tools #hint[aria-pressed=true]{background:#e3ead9;color:#34583f}
+#hint-count{white-space:nowrap}
+#finish-hints{padding-top:4px}
 #level-grid button{aspect-ratio:auto;min-height:66px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;padding:8px 2px}
 #level-grid button small{font-size:9px;line-height:1.4;min-height:13px;white-space:nowrap}
 #level-grid button.complete:after{display:none}

@@ -1,22 +1,22 @@
 import { CUBE_LEVELS } from './cube-levels.js?v=1';
 import { SURFACE_LEVELS } from './surface-levels.js?v=18';
-import { ROUND_LEVELS } from './round-levels.js?v=18';
 import { SURFACE_CAMPAIGN_LEVELS } from './surface-campaign-levels.js?v=18';
-import { CAMPAIGN_ROUND_LEVELS } from './campaign-round-levels.js?v=18';
+import { COLUMN_REPLACEMENT_LEVELS } from './column-replacement-levels.js?v=1';
 import { unpackCampaignBoard } from './campaign-codec.js?v=18';
 import { exitRay, pieceRoute, surfaceKey } from './surface-topology.js?v=18';
 import { roundExitRay } from './round-topology.js?v=18';
 
-const campaign = new Map([...SURFACE_CAMPAIGN_LEVELS, ...CAMPAIGN_ROUND_LEVELS].map(level => [level.id, level]));
+const replacements = new Map(COLUMN_REPLACEMENT_LEVELS.map(level => [level.id, level]));
+const campaign = new Map([...SURFACE_CAMPAIGN_LEVELS, ...COLUMN_REPLACEMENT_LEVELS.filter(level => level.id > 30)].map(level => [level.id, level]));
 export const CUBE_LEVEL_COUNT = CUBE_LEVELS.length + SURFACE_LEVELS.length + campaign.size;
 
 export function createCubeLevel(levelNumber) {
   if (!Number.isInteger(levelNumber) || levelNumber < 1 || levelNumber > CUBE_LEVEL_COUNT) {
     throw new RangeError(`Cube level must be an integer from 1 to ${CUBE_LEVEL_COUNT}`);
   }
+  if (replacements.has(levelNumber)) return unpackCampaignBoard(replacements.get(levelNumber));
   if (campaign.has(levelNumber)) return unpackCampaignBoard(campaign.get(levelNumber));
-  const board = ROUND_LEVELS.find(level => level.id === levelNumber)
-    ?? (levelNumber <= 3 ? CUBE_LEVELS[levelNumber - 1] : SURFACE_LEVELS[levelNumber - 4]);
+  const board = levelNumber <= 3 ? CUBE_LEVELS[levelNumber - 1] : SURFACE_LEVELS[levelNumber - 4];
   return {
     ...board,
     ...(board.shape ? { shape: { ...board.shape, scale: [...board.shape.scale] } } : {}),
