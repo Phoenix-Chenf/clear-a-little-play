@@ -56,6 +56,9 @@ body[data-mode=cube] .feedback-line{min-height:38px}
 .finish .finish-record p+p{font-size:11px;color:var(--quiet)}
 .trial-note{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:10px 2px 9px;font-size:11px;line-height:1.7;color:var(--quiet)}
 .trial-note a{color:var(--accent);text-underline-offset:3px;padding:7px 0}
+.face-variant{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:1px 0 3px;font-size:11px;line-height:1.5;color:var(--quiet)}
+.face-variant button{border:0;border-radius:8px;background:#e3e9dc;color:var(--accent);font-size:11px;min-height:40px;padding:0 12px;white-space:nowrap}
+.face-variant button:hover{background:#d8e3d3}
 .save-status{margin:12px 0 0;color:#86512e;font-size:12px;line-height:1.6}
 .tools #hint[aria-pressed=true]{background:#e3ead9;color:#34583f}
 #hint-count{white-space:nowrap}

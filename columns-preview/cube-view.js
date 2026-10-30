@@ -25,7 +25,7 @@ export function createCubeView({ host, onMove, onPoseChange = () => {} }) {
   const doc = host.ownerDocument, win = doc.defaultView;
   const reduced = win.matchMedia('(prefers-reduced-motion: reduce)');
   const listeners = new AbortController(), options = { signal: listeners.signal };
-  const faces = new Map(), skins = [], pieceNodes = new Map(), departures = new Map(), nudges = new Map(), pointers = new Map();
+  const faces = new Map(), skins = [], pieceNodes = new Map(), departures = new Map(), nudges = new Map(), pulses = new Map(), pointers = new Map();
   const viewId = ++viewNumber;
   let currentBoard = null, active = false, closeup = false, hintId = null, selectedFace = 'front';
   let pose = { ...INITIAL_POSE }, gesture = null, dimensions = { width: 320, height: 320 };
@@ -174,6 +174,31 @@ export function createCubeView({ host, onMove, onPoseChange = () => {} }) {
     for (const fragment of nudge.fragments) { fragment.group.removeAttribute('transform'); fragment.group.style.opacity = ''; fragment.group.classList.remove('is-blocked'); }
     nudges.delete(id);
   }
+  function clearPulse(id) {
+    const state = pulses.get(id); if (!state) return;
+    win.cancelAnimationFrame(state.frame); pulses.delete(id);
+    for (const fragment of state.fragments) { fragment.group.classList.remove('is-pulse'); fragment.group.style.opacity = ''; }
+  }
+  function clearPulses() { for (const id of [...pulses.keys()]) clearPulse(id); }
+  // 新变化的动画引导：棋子刚刚由"不可移"变成"可移"时，做一次短促呼吸，帮玩家定位。
+  // 只做视觉强调，不改变可移判定，也不等于给答案；系统开启"减少动效"时跳过。
+  function pulse(ids = []) {
+    clearPulses();
+    if (!active || destroyed || reduced.matches) return;
+    for (const id of ids) {
+      const node = pieceNodes.get(id); if (!node) continue;
+      const began = win.performance.now(), duration = 620, state = { fragments: node.fragments, frame: 0 };
+      pulses.set(id, state);
+      for (const fragment of node.fragments) fragment.group.classList.add('is-pulse');
+      const animate = now => {
+        const t = Math.min(1, (now - began) / duration), k = Math.sin(t * Math.PI);
+        for (const fragment of node.fragments) fragment.group.style.opacity = String(1 - k * .55);
+        if (t < 1 && pulses.get(id) === state) state.frame = win.requestAnimationFrame(animate);
+        else clearPulse(id);
+      };
+      state.frame = win.requestAnimationFrame(animate);
+    }
+  }
   function clearNudges() { for (const id of [...nudges.keys()]) clearNudge(id); }
   function syncHints() {
     for (const [id, node] of pieceNodes) {
@@ -206,8 +231,17 @@ export function createCubeView({ host, onMove, onPoseChange = () => {} }) {
 
   const fragmentLabel = (piece, segment, index) => `${faces.get(segment.face).name}，向${DIRECTION_NAMES[piece.dir]}的箭头 ${index + 1}${segment.head ? '' : '，相连线段'}`;
 
-  function makeFragment(board, piece, segment, index, fragmentIndex, interactive = true) {
-    const attributes = { class: `cube-piece${interactive ? '' : ' cube-departure'}` };
+  // 多个方块相邻时，一个物理平面可能被拆成多个 patch。跨面档位
+  // 必须按方向和平面坐标去重，不能把同一平面的接缝当成转角。
+  function planeKey(face, cubes) {
+    const side = face.side || face.id, normal = FACE_BASES[side]?.normal;
+    if (!normal) return face.id;
+    const at = cubes.get(face.cubeId)?.at || [0, 0, 0];
+    return `${side}:${at.reduce((sum, value, axis) => sum + value * normal[axis], 0)}`;
+  }
+  const crossTierClass = faces => faces >= 3 ? ' cube-cross-deep' : faces === 2 ? ' cube-cross-mid' : '';
+  function makeFragment(board, piece, segment, index, fragmentIndex, interactive = true, crossFaces = 0) {
+    const attributes = { class: `cube-piece${interactive ? '' : ' cube-departure'}${crossTierClass(crossFaces)}` };
     if (interactive) Object.assign(attributes, {
       role: 'button', tabindex: '-1', 'data-cube-piece': piece.id, 'data-fragment': String(fragmentIndex), 'data-face': segment.face,
       'aria-label': fragmentLabel(piece, segment, index),
@@ -256,9 +290,11 @@ export function createCubeView({ host, onMove, onPoseChange = () => {} }) {
     if (destroyed || !board) return;
     const candidate = doc.activeElement?.closest?.('[data-cube-piece]'), focused = body.contains(candidate) ? candidate : null;
     const focusedId = focused?.dataset.cubePiece, focusedFace = focused?.dataset.face;
-    currentBoard = board; hintId = nextHint; clearNudges(); buildFaces(board);
+    currentBoard = board; hintId = nextHint; clearNudges(); clearPulses(); buildFaces(board);
     if (!faces.has(selectedFace)) selectedFace = board.faces.find(face => (face.side || face.id) === 'front')?.id || board.faces[0]?.id;
     const remaining = new Map(board.pieces.map(piece => [piece.id, piece]));
+    const cubes = new Map((board.cubes || []).map(cube => [cube.id, cube]));
+    const planes = new Map(board.faces.map(face => [face.id, planeKey(face, cubes)]));
     for (const id of departures.keys()) if (remaining.has(id)) clearDeparture(id);
     // Moves retain their untouched immutable pieces. Keep those SVG groups and
     // their cached world-space samples; only changed or returned routes need
@@ -276,8 +312,10 @@ export function createCubeView({ host, onMove, onPoseChange = () => {} }) {
         }
         return;
       }
-      const fragments = routeSegments(board, piece).map((segment, fragmentIndex) => {
-        return makeFragment(board, piece, segment, index, fragmentIndex);
+      const segments = routeSegments(board, piece);
+      const crossFaces = new Set(segments.map(segment => planes.get(segment.face) ?? segment.face)).size;
+      const fragments = segments.map((segment, fragmentIndex) => {
+        return makeFragment(board, piece, segment, index, fragmentIndex, true, crossFaces);
       });
       pieceNodes.set(piece.id, { piece, fragments, index });
     });
@@ -400,7 +438,7 @@ export function createCubeView({ host, onMove, onPoseChange = () => {} }) {
   function setActive(enabled) {
     if (destroyed) return;
     active = Boolean(enabled); host.hidden = !active; host.inert = !active; host.tabIndex = active ? 0 : -1; host.setAttribute('aria-hidden', String(!active));
-    if (!active) { cancelGesture(); stopPoseAnimation(); clearDepartures(); clearNudges(); hintId = null; syncHints(); }
+    if (!active) { cancelGesture(); stopPoseAnimation(); clearDepartures(); clearNudges(); clearPulses(); hintId = null; syncHints(); }
     measure();
   }
   function targetFragment(target) {
@@ -483,7 +521,7 @@ export function createCubeView({ host, onMove, onPoseChange = () => {} }) {
   const observer = new ResizeObserver(() => { if (!destroyed) measure(); }); observer.observe(host); setActive(false);
   function destroy() {
     if (destroyed) return;
-    cancelGesture(); stopPoseAnimation(); clearDepartures(); clearNudges(); observer.disconnect(); listeners.abort(); destroyed = true; host.replaceChildren(); host.classList.remove('cube-stage', 'is-closeup', 'is-dragging');
+    cancelGesture(); stopPoseAnimation(); clearDepartures(); clearNudges(); clearPulses(); observer.disconnect(); listeners.abort(); destroyed = true; host.replaceChildren(); host.classList.remove('cube-stage', 'is-closeup', 'is-dragging');
   }
-  return { render, reset, turn, focusPiece, setCloseup, setZoom, preferredHint, feedback, playExit, setActive, destroy };
+  return { render, reset, turn, focusPiece, setCloseup, setZoom, preferredHint, feedback, playExit, pulse, setActive, destroy };
 }
