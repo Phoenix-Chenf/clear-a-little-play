@@ -16,7 +16,8 @@ import { createDepartureBarrier } from './departure-barrier.js?v=1';
 import { migrateColumnCampaign, columnCampaignSessionKey, readColumnCampaignSession } from './column-campaign-migration.js?v=1';
 import { mergeCompleted, mergePlayHistories } from './play-record-merge.js?v=1';
 import { CUBE_DIVERSE_LEVELS } from './cube-diverse-levels.js?v=2';
-import { FACE_PROGRESS_KEY, FACE_HISTORY_KEY, FACE_VARIANT_KEY, composeFaceProgress, splitFaceProgress, faceSessionKey } from './cube-face-variants.js?v=1';
+import { FACE_PROGRESS_KEY, FACE_HISTORY_KEY, FACE_VARIANT_KEY, composeFaceProgress, splitFaceProgress, faceSessionKey, variantForUnfinishedSession } from './cube-face-variants-v2.js?v=1';
+import { createDiverseSurfaceLevel } from './cube-diverse-surface-levels.js?v=2';
 
 const $ = id => document.getElementById(id);
 const canvas = $('board'), ctx = canvas.getContext('2d'), piecesEl = $('pieces');
@@ -97,7 +98,7 @@ completed = new Set(modeProgress[mode].completed);
 const isSearch = () => mode === 'search';
 const isCube = () => mode === 'cube';
 const isTrialCube = () => isCube() && trialColumns;
-const isDiverseCubeLevel = (number = level) => isCube() && !isTrialCube() && faceVariant === 'diverse' && number >= 1 && number <= 3;
+const isDiverseCubeLevel = (number = level) => isCube() && !isTrialCube() && faceVariant === 'diverse' && number >= 1 && number <= 100;
 const recordForLevel = number => (isDiverseCubeLevel(number) ? diversePlayHistory : playHistory).times[mode][number];
 const isRound = () => isCube() && board?.rules === 'round';
 const isTutorial = () => mode === 'classic' && level < 4;
@@ -255,11 +256,27 @@ function updateZoomControl() {
   viewport.classList.toggle('zoomed', !isCube() && zoom > 1);
 }
 
-function setBoard(n, { fresh = false, remember = true, replayFinished = false } = {}) {
+function setBoard(n, { fresh = false, remember = true, replayFinished = false, resumeOlder = true } = {}) {
   if (remember) saveSession();
   initialized = false;
   clearTimeout(finishTimer); clearTimeout(statusTimer);
-  level = n; initial = isTrialCube() ? createColumnTrialLevel(n) : isDiverseCubeLevel(n) ? structuredClone(CUBE_DIVERSE_LEVELS[n - 1]) : isCube() ? createCubeLevel(n) : isSearch() ? createSearchLevel(n) : createLevel(n);
+  level = n;
+  let resumedOlder = false;
+  if (resumeOlder && !fresh && isDiverseCubeLevel(n) && n >= 4) {
+    try {
+      const revised = createDiverseSurfaceLevel(n);
+      const newRaw = readOptional(faceSessionKey(n, 'diverse'));
+      const newSession = newRaw && restoreSession(revised, newRaw, tryCubeMove);
+      const oldBoard = createCubeLevel(n);
+      const oldSession = readColumnCampaignSession(localStorage, n, oldBoard, tryCubeMove).session;
+      if (variantForUnfinishedSession(faceVariant, newSession, oldSession) === 'legacy') {
+        faceVariant = 'legacy'; resumedOlder = true;
+        localStorage.setItem(FACE_VARIANT_KEY, faceVariant);
+        completed = new Set(composeFaceProgress(readOptional(cubeStoreKey) ?? migration.progress, readOptional(FACE_PROGRESS_KEY), faceVariant).completed);
+      }
+    } catch { /* Save failures are reported by the regular save path. */ }
+  }
+  initial = isTrialCube() ? createColumnTrialLevel(n) : isDiverseCubeLevel(n) ? (n <= 3 ? structuredClone(CUBE_DIVERSE_LEVELS[n - 1]) : createDiverseSurfaceLevel(n)) : isCube() ? createCubeLevel(n) : isSearch() ? createSearchLevel(n) : createLevel(n);
   const loaded = fresh ? { source: 'fresh', session: null } : readSession();
   const restored = replayFinished && loaded.session?.finished ? null : loaded.session;
   board = restored?.board || initial;
@@ -269,10 +286,10 @@ function setBoard(n, { fresh = false, remember = true, replayFinished = false } 
   $('finish').hidden = true;
   $('level-label').textContent = isCube() ? `${isTrialCube() ? '试玩' : '立体'} ${String(n).padStart(2, '0')} / ${String(levelCount()).padStart(2, '0')} 关` : isSearch() ? `密线 ${String(n).padStart(2, '0')} / ${String(SEARCH_LEVEL_COUNT).padStart(2, '0')} 关` : `第 ${String(n).padStart(2, '0')} 关`;
   $('trial-note').hidden = !isTrialCube();
-  $('face-variant').hidden = !isCube() || isTrialCube() || n > 3;
-  $('face-variant-label').textContent = faceVariant === 'legacy' ? '第 1–3 关：旧版线路' : '第 1–3 关：新版线路';
+  $('face-variant').hidden = !isCube() || isTrialCube();
+  $('face-variant-label').textContent = faceVariant === 'legacy' ? '当前：旧版线路' : '当前：新版线路';
   $('face-variant-toggle').textContent = faceVariant === 'legacy' ? '切换新版' : '继续旧版';
-  $('face-variant-toggle').setAttribute('aria-label', faceVariant === 'legacy' ? '切换到第 1–3 关新版线路' : '切换到第 1–3 关旧版线路');
+  $('face-variant-toggle').setAttribute('aria-label', faceVariant === 'legacy' ? '切换到新版线路' : '切换到旧版线路');
   $('level-name').textContent = initial.name;
   document.body.dataset.mode = mode;
   $('mode-search').setAttribute('aria-pressed', String(isSearch()));
@@ -306,7 +323,7 @@ function setBoard(n, { fresh = false, remember = true, replayFinished = false } 
   initialized = true;
   if (!playHistory.guides[mode]) showGuide(true);
   if (restored?.finished) finish();
-  else if (restored?.moves.length) message(loaded.source === 'trial' ? '已接着之前试玩的进度，撤回也保留了。' : '已接着上次的进度，撤回也保留了。');
+  else if (restored?.moves.length) message(resumedOlder ? '已接着旧版的进度，可随时切换新版。' : loaded.source === 'trial' ? '已接着之前试玩的进度，撤回也保留了。' : '已接着上次的进度，撤回也保留了。');
   else if (loaded.source === 'replaced') message('这一关已换新造型，旧进度已保留，新关从头开始。');
   syncTimer();
   saveSession();
@@ -630,13 +647,13 @@ $('mode-search').addEventListener('click', () => selectMode('search'));
 $('mode-cube').addEventListener('click', () => selectMode('cube'));
 $('mode-classic').addEventListener('click', () => selectMode('classic'));
 $('face-variant-toggle').addEventListener('click', () => {
-  if (!isCube() || isTrialCube() || level > 3) return;
+  if (!isCube() || isTrialCube()) return;
   saveSession(); save();
   faceVariant = faceVariant === 'diverse' ? 'legacy' : 'diverse';
   try { localStorage.setItem(FACE_VARIANT_KEY, faceVariant); } catch { reportSaveFailure(); }
   const progress = composeFaceProgress(readOptional(cubeStoreKey) ?? migration.progress, readOptional(FACE_PROGRESS_KEY), faceVariant);
   completed = new Set(progress.completed);
-  setBoard(level, { remember: false });
+  setBoard(level, { remember: false, resumeOlder: false });
 });
 $('cube-prev').addEventListener('click', () => cubeView.turn(-1));
 $('cube-next').addEventListener('click', () => cubeView.turn(1));
