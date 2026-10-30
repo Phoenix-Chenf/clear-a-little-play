@@ -17,6 +17,13 @@
 .cube-piece.is-hinted .cube-arrow-head,.cube-piece:focus-visible .cube-arrow-head{stroke:#acba94;stroke-width:.12;paint-order:stroke fill}
 .cube-hit-line{fill:none;stroke:transparent;stroke-width:.68;stroke-linecap:round;stroke-linejoin:round;pointer-events:stroke;cursor:pointer}
 .cube-face[aria-hidden=true] .cube-hit-line{pointer-events:none}
+.cube-piece.cube-cross-mid .cube-arrow-line{stroke:#3f8f63}
+.cube-piece.cube-cross-mid .cube-arrow-head{fill:#3f8f63}
+.cube-piece.cube-cross-deep .cube-arrow-line{stroke:#0d8a52;stroke-width:.175}
+.cube-piece.cube-cross-deep .cube-arrow-head{fill:#0d8a52}
+.cube-piece.is-pulse .cube-arrow-halo{stroke:#0d8a52;opacity:.55}
+.cube-piece.cube-cross-mid .cube-arrow-halo{stroke:#8fc7a8}
+.cube-piece.cube-cross-deep .cube-arrow-halo{stroke:#7bbd97}
 .cube-piece.is-blocked .cube-arrow-line{stroke:#916448}
 .cube-piece.is-blocked .cube-arrow-head{fill:#916448}
 .cube-departures,.cube-departure{pointer-events:none}

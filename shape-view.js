@@ -1,4 +1,4 @@
-import { createCubeView } from './cube-view.js?v=19';
+import { createCubeView } from './cube-view.js?v=20';
 import { createRoundView } from './round-view.js?v=19';
 
 // Keep the established CSS view intact. Cache one curved GPU context across
@@ -17,7 +17,7 @@ export function createShapeView({host,onMove,onPoseChange=()=>{}}) {
   }
   function setActive(enabled){if(destroyed)return;active=Boolean(enabled);show();current?.setActive(active);show();}
   const api={render,setActive,destroy(){if(destroyed)return;cube?.destroy();round?.destroy();host.replaceChildren();destroyed=true;}};
-  for(const method of ['reset','turn','focusPiece','setCloseup','feedback','playExit'])api[method]=(...args)=>{if(!destroyed)return current?.[method]?.(...args);};
+  for(const method of ['reset','turn','focusPiece','setCloseup','feedback','playExit','pulse'])api[method]=(...args)=>{if(!destroyed)return current?.[method]?.(...args);};
   api.setZoom=scale=>{if(!destroyed)return current?.setZoom?.(scale);};
   api.preferredHint=ids=>destroyed?null:(current?.preferredHint?.(ids)??null);
   return api;

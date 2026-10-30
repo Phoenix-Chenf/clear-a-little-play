@@ -5,7 +5,7 @@ import { hitPieceAt, exitPath } from './geometry.js?v=5';
 import { restoreSearchProgress, SEARCH_PROGRESS_REVISION } from './search-progress.js?v=8';
 import { CUBE_LEVEL_COUNT, createCubeLevel, availableCubeMoves, tryCubeMove } from './cube-engine.js?v=20';
 import { restoreCubeProgress, CUBE_PROGRESS_REVISION } from './cube-progress.js?v=18';
-import { createShapeView } from './shape-view.js?v=19';
+import { createShapeView } from './shape-view.js?v=20';
 import { restorePlayHistory, recordCompletion, formatDuration, createPlayTimer } from './play-history.js?v=2';
 import { createGuideDemo } from './guide-demo.js?v=1';
 import { COLUMN_TRIAL_LEVEL_COUNT, createColumnTrialLevel } from './column-trial-levels.js?v=1';
@@ -15,6 +15,8 @@ import { clampView } from './view-transform.js?v=19';
 import { createDepartureBarrier } from './departure-barrier.js?v=1';
 import { migrateColumnCampaign, columnCampaignSessionKey, readColumnCampaignSession } from './column-campaign-migration.js?v=1';
 import { mergeCompleted, mergePlayHistories } from './play-record-merge.js?v=1';
+import { CUBE_DIVERSE_LEVELS } from './cube-diverse-levels.js?v=2';
+import { FACE_PROGRESS_KEY, FACE_HISTORY_KEY, FACE_VARIANT_KEY, composeFaceProgress, splitFaceProgress, faceSessionKey } from './cube-face-variants.js?v=1';
 
 const $ = id => document.getElementById(id);
 const canvas = $('board'), ctx = canvas.getContext('2d'), piecesEl = $('pieces');
@@ -47,6 +49,9 @@ const readOptional = key => {
 };
 const legacyPlayHistory = readProgress(legacyHistoryStoreKey, restorePlayHistory);
 let trialPlayHistory = readProgress(trialHistoryStoreKey, restorePlayHistory);
+let diversePlayHistory = readProgress(FACE_HISTORY_KEY, restorePlayHistory);
+let faceVariant = 'diverse';
+try { if (localStorage.getItem(FACE_VARIANT_KEY) === 'legacy') faceVariant = 'legacy'; } catch {}
 const migration = migrateColumnCampaign(readOptional(legacyCubeStoreKey), legacyPlayHistory, readOptional(trialCubeStoreKey), trialPlayHistory);
 const storedHistory = readOptional(historyStoreKey);
 let regularPlayHistory = storedHistory ? restorePlayHistory(storedHistory) : migration.history;
@@ -67,7 +72,7 @@ const guides = {
   ] },
   cube: { name: '立体找箭头', title: '转一转，找到下一条出路。', steps: [
     ['拖动旋转', '单指转动，双指捏合放大、平移查看。'],
-    ['点线路任意一段', '长线可能跨面，箭头前方空了才能抽走。'],
+    ['点线路任意一段', '绿色线路跨面；箭头前方空了才能抽走。'],
     ['慢慢清空整个造型', '不限次数，可放大、撤回或看提示。'],
   ] },
 };
@@ -78,7 +83,7 @@ const modeProgress = {
     level: saved?.revision === 1 && Number.isInteger(saved.level) ? Math.max(1, Math.min(COLUMN_TRIAL_LEVEL_COUNT, saved.level)) : 1,
     completed: saved?.revision === 1 && Array.isArray(saved.completed) ? [...new Set(saved.completed.filter(n => Number.isInteger(n) && n >= 1 && n <= COLUMN_TRIAL_LEVEL_COUNT))] : [],
     revision: 1,
-  })) : (readOptional(cubeStoreKey) ? readProgress(cubeStoreKey, restoreCubeProgress) : migration.progress),
+  })) : composeFaceProgress(readOptional(cubeStoreKey) ?? migration.progress, readOptional(FACE_PROGRESS_KEY), faceVariant),
 };
 let mode = 'cube';
 try {
@@ -92,6 +97,8 @@ completed = new Set(modeProgress[mode].completed);
 const isSearch = () => mode === 'search';
 const isCube = () => mode === 'cube';
 const isTrialCube = () => isCube() && trialColumns;
+const isDiverseCubeLevel = (number = level) => isCube() && !isTrialCube() && faceVariant === 'diverse' && number >= 1 && number <= 3;
+const recordForLevel = number => (isDiverseCubeLevel(number) ? diversePlayHistory : playHistory).times[mode][number];
 const isRound = () => isCube() && board?.rules === 'round';
 const isTutorial = () => mode === 'classic' && level < 4;
 const levelCount = () => isTrialCube() ? COLUMN_TRIAL_LEVEL_COUNT : isCube() ? CUBE_LEVEL_COUNT : isSearch() ? SEARCH_LEVEL_COUNT : LEVEL_COUNT;
@@ -109,6 +116,17 @@ function save() {
   const revision = isTrialCube() ? 1 : isCube() ? CUBE_PROGRESS_REVISION : isSearch() ? SEARCH_PROGRESS_REVISION : PROGRESS_REVISION;
   const key = isCube() ? cubeStoreKey : isSearch() ? searchStoreKey : storeKey;
   const prior = readOptional(key);
+  if (isCube() && !isTrialCube()) {
+    const split = splitFaceProgress(prior ?? migration.progress, readOptional(FACE_PROGRESS_KEY), { level, completed: [...completed] }, faceVariant);
+    completed = new Set(composeFaceProgress(split.shared, split.revised, faceVariant).completed);
+    modeProgress.cube = { level, completed: [...completed], revision };
+    try {
+      localStorage.setItem(cubeStoreKey, JSON.stringify(split.shared));
+      if (faceVariant === 'diverse') localStorage.setItem(FACE_PROGRESS_KEY, JSON.stringify(split.revised));
+      localStorage.setItem(modeStoreKey, mode);
+    } catch { reportSaveFailure(); }
+    return;
+  }
   completed = new Set(mergeCompleted(prior?.revision === revision ? prior.completed : [], [...completed], levelCount()));
   const progress = { level, completed: [...completed], revision };
   modeProgress[mode] = progress;
@@ -124,7 +142,7 @@ function reportSaveFailure() {
 }
 
 function sessionKey() {
-  if (isCube() && !isTrialCube()) return columnCampaignSessionKey(level);
+  if (isCube() && !isTrialCube()) return faceSessionKey(level, faceVariant);
   if (isTrialCube()) return `clear-a-little-session-v1-cube-columns-${level}`;
   return `clear-a-little-column100-session-v1-${mode}-${level}`;
 }
@@ -142,6 +160,10 @@ function saveSession() {
 
 function readSession() {
   try {
+    if (isDiverseCubeLevel()) {
+      const value = localStorage.getItem(sessionKey());
+      return { source: 'current', session: value === null ? null : restoreSession(initial, JSON.parse(value), tryCubeMove) };
+    }
     if (isCube() && !isTrialCube()) return readColumnCampaignSession(localStorage, level, initial, tryCubeMove);
     let value = localStorage.getItem(sessionKey());
     if (value === null && !isCube()) value = localStorage.getItem(`clear-a-little-session-v1-${mode}-${level}`);
@@ -151,7 +173,7 @@ function readSession() {
 
 function restingCopy() {
   if (isRound()) return '前方留出一小段空隙，线路就能抽走。';
-  return isCube() ? (board?.rules === 'surface' ? '线路会跨面，箭头前方空了才能移走。' : '沿本面出口离开，清空六面过关。') : isSearch() ? '找一条前方空着的箭头，不用着急。' : isTutorial() ? '顺着箭头，把小块移出去。' : '看清方向，一条一条清空。';
+  return isCube() ? (board?.rules === 'surface' ? '绿色线路跨面；前方空了才能移走。' : '沿本面出口离开，清空六面过关。') : isSearch() ? '找一条前方空着的箭头，不用着急。' : isTutorial() ? '顺着箭头，把小块移出去。' : '看清方向，一条一条清空。';
 }
 
 function savePlayHistory({ completedLevel } = {}) {
@@ -165,7 +187,7 @@ function savePlayHistory({ completedLevel } = {}) {
 function renderTime() {
   const elapsed = playTimer.elapsed();
   $('attempt-time').textContent = `本关用时 ${formatDuration(playTimer.finished ? elapsed : Math.floor(elapsed / 1000) * 1000)}`;
-  const record = playHistory.times[mode][level];
+  const record = recordForLevel(level);
   $('best-time').hidden = !record;
   $('best-time').textContent = record ? `上次 ${formatDuration(record.latestMs)} · 最佳 ${formatDuration(record.bestMs)}` : '';
   if (!playTimer.finished && elapsed - sessionElapsedSaved >= 5000) saveSession();
@@ -237,7 +259,7 @@ function setBoard(n, { fresh = false, remember = true, replayFinished = false } 
   if (remember) saveSession();
   initialized = false;
   clearTimeout(finishTimer); clearTimeout(statusTimer);
-  level = n; initial = isTrialCube() ? createColumnTrialLevel(n) : isCube() ? createCubeLevel(n) : isSearch() ? createSearchLevel(n) : createLevel(n);
+  level = n; initial = isTrialCube() ? createColumnTrialLevel(n) : isDiverseCubeLevel(n) ? structuredClone(CUBE_DIVERSE_LEVELS[n - 1]) : isCube() ? createCubeLevel(n) : isSearch() ? createSearchLevel(n) : createLevel(n);
   const loaded = fresh ? { source: 'fresh', session: null } : readSession();
   const restored = replayFinished && loaded.session?.finished ? null : loaded.session;
   board = restored?.board || initial;
@@ -247,6 +269,10 @@ function setBoard(n, { fresh = false, remember = true, replayFinished = false } 
   $('finish').hidden = true;
   $('level-label').textContent = isCube() ? `${isTrialCube() ? '试玩' : '立体'} ${String(n).padStart(2, '0')} / ${String(levelCount()).padStart(2, '0')} 关` : isSearch() ? `密线 ${String(n).padStart(2, '0')} / ${String(SEARCH_LEVEL_COUNT).padStart(2, '0')} 关` : `第 ${String(n).padStart(2, '0')} 关`;
   $('trial-note').hidden = !isTrialCube();
+  $('face-variant').hidden = !isCube() || isTrialCube() || n > 3;
+  $('face-variant-label').textContent = faceVariant === 'legacy' ? '第 1–3 关：旧版线路' : '第 1–3 关：新版线路';
+  $('face-variant-toggle').textContent = faceVariant === 'legacy' ? '切换新版' : '继续旧版';
+  $('face-variant-toggle').setAttribute('aria-label', faceVariant === 'legacy' ? '切换到第 1–3 关新版线路' : '切换到第 1–3 关旧版线路');
   $('level-name').textContent = initial.name;
   document.body.dataset.mode = mode;
   $('mode-search').setAttribute('aria-pressed', String(isSearch()));
@@ -354,6 +380,7 @@ function renderHits() {
 
 function move(id) {
   if (!board.pieces.length || !$('finish').hidden || $('guide-dialog').open || $('level-dialog').open) return;
+  const beforeMoves = isCube() ? new Set(availableCubeMoves(board)) : null;
   const result = isCube() ? tryCubeMove(board, id) : tryMove(board, id), piece = board.pieces.find(p => p.id === id);
   if (!piece) return;
   const now = performance.now();
@@ -365,8 +392,13 @@ function move(id) {
   }
   history.push(board); moveIds.push(id); board = result.board; clearHint();
   message('又空出一点。', 'success');
-  let departureDuration;
-  if (isCube()) departureDuration = cubeView.playExit(piece) ?? (reduced.matches ? 110 : 680);
+  let departureDuration, unlocked = [];
+  if (isCube()) {
+    departureDuration = cubeView.playExit(piece) ?? (reduced.matches ? 110 : 680);
+    // 新变化的动画引导：只对"这一步之后才变得可移"的棋子做呼吸提示。
+    // 之前就能移的不再重复打扰；减少动效时 pulse 内部会自行跳过。
+    unlocked = availableCubeMoves(board).filter(nextId => !beforeMoves.has(nextId));
+  }
   else {
     departureDuration = reduced.matches ? 100 : 360 + piece.cells.length * 10;
     flights.push({ piece, start: now, duration: departureDuration });
@@ -374,11 +406,22 @@ function move(id) {
     const center = { x: layout.pad + (head[0] + .5) * layout.cell, y: layout.pad + (head[1] + .5) * layout.cell };
     if (!reduced.matches) for (let i = 0; i < 4; i++) sparks.push({ ...center, angle: i * Math.PI / 2 + .3, start: now, color: isSearch() ? '#2c4237' : colors[piece.color % 5][1] });
   }
-  tone(); refresh(); requestDraw();
+  tone(); refresh();
+  // Rendering clears old highlights, so start the new pulse only after the
+  // moved board is in the view and its retained routes have been updated.
+  if (isCube() && unlocked.length) cubeView.pulse(unlocked);
+  requestDraw();
   departures.add(departureDuration);
   if (!board.pieces.length) {
-    playHistory = recordCompletion(playHistory, mode, level, playTimer.complete(), { hintUses });
-    savePlayHistory({ completedLevel: level }); syncTimer();
+    if (isDiverseCubeLevel()) {
+      const incoming = recordCompletion(diversePlayHistory, mode, level, playTimer.complete(), { hintUses });
+      diversePlayHistory = mergePlayHistories(readOptional(FACE_HISTORY_KEY), incoming, { mode, completedLevel: level });
+      try { localStorage.setItem(FACE_HISTORY_KEY, JSON.stringify(diversePlayHistory)); } catch { reportSaveFailure(); }
+    } else {
+      playHistory = recordCompletion(playHistory, mode, level, playTimer.complete(), { hintUses });
+      savePlayHistory({ completedLevel: level });
+    }
+    syncTimer();
     completed.add(level); save();
     finishTimer = setTimeout(finish, departures.remaining() + 30);
   }
@@ -392,7 +435,7 @@ function finish() {
   $('finish-copy').textContent = last && isTrialCube() ? '4个新版造型，都慢慢理清了。' : last && isCube() ? `${CUBE_LEVEL_COUNT}关立体，都慢慢理清了。` : last && isSearch() ? `${SEARCH_LEVEL_COUNT}关密线，都慢慢理清了。` : last ? '谢谢你慢慢玩到这里。' : '留一点空，刚刚好。';
   $('next').firstChild.textContent = last ? '从头再玩' : '再来一关';
   $('finish').hidden = false;
-  const record = playHistory.times[mode][level];
+  const record = recordForLevel(level);
   $('finish-time').textContent = `本次用时 ${formatDuration(playTimer.elapsed())}`;
   $('finish-best').textContent = record ? `最佳 ${formatDuration(record.bestMs)}${record.unassistedBestMs ? ` · 无提示最佳 ${formatDuration(record.unassistedBestMs)}` : ''}` : '';
   $('finish-hints').textContent = hintUses ? `本次使用提示 ${hintUses} 次` : '本次未使用提示';
@@ -586,6 +629,15 @@ $('next').addEventListener('click', () => {
 $('mode-search').addEventListener('click', () => selectMode('search'));
 $('mode-cube').addEventListener('click', () => selectMode('cube'));
 $('mode-classic').addEventListener('click', () => selectMode('classic'));
+$('face-variant-toggle').addEventListener('click', () => {
+  if (!isCube() || isTrialCube() || level > 3) return;
+  saveSession(); save();
+  faceVariant = faceVariant === 'diverse' ? 'legacy' : 'diverse';
+  try { localStorage.setItem(FACE_VARIANT_KEY, faceVariant); } catch { reportSaveFailure(); }
+  const progress = composeFaceProgress(readOptional(cubeStoreKey) ?? migration.progress, readOptional(FACE_PROGRESS_KEY), faceVariant);
+  completed = new Set(progress.completed);
+  setBoard(level, { remember: false });
+});
 $('cube-prev').addEventListener('click', () => cubeView.turn(-1));
 $('cube-next').addEventListener('click', () => cubeView.turn(1));
 $('cube-reset').addEventListener('click', () => { clearHint(); cubeView.reset(); message(restingCopy()); });
@@ -602,7 +654,7 @@ $('level-open').addEventListener('click', () => {
   for (let n = 1; n <= levelCount(); n++) {
     const button = document.createElement('button');
     const number = document.createElement('span'), time = document.createElement('small');
-    const record = playHistory.times[mode][n];
+    const record = recordForLevel(n);
     number.textContent = String(n).padStart(2, '0');
     time.textContent = record ? `最佳 ${formatDuration(record.bestMs)}` : completed.has(n) ? '已通关' : '';
     button.append(number, time);

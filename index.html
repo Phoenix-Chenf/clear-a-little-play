@@ -7,9 +7,9 @@
   <meta name="description" content="点一下，让拥挤慢慢散开。一款操作简单、反馈轻快的清空小游戏。">
   <title>空一点 · 清空小游戏</title>
   <link rel="icon" href="icon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="style.css?v=21">
+  <link rel="stylesheet" href="style.css?v=23">
   <link rel="stylesheet" href="guide-demo.css?v=1">
-  <link rel="stylesheet" href="cube-view.css?v=19">
+  <link rel="stylesheet" href="cube-view.css?v=21">
   <link rel="stylesheet" href="round-view.css?v=19">
 </head>
 <body>
@@ -23,6 +23,7 @@
       <div class="play-modes" role="group" aria-label="选择玩法"><button id="mode-cube" aria-pressed="false">立体找箭头</button><button id="mode-search" aria-pressed="true">密线找箭头</button><button id="mode-classic" aria-pressed="false">原版 100 关</button></div>
       <p id="trial-note" class="trial-note" hidden>4个长方柱新关 · <a href="?mode=cube&v=columns1">返回原100关</a></p>
       <div class="level-meta"><button id="level-open" class="level-button" aria-haspopup="dialog"><span id="level-label">第 01 关</span><svg viewBox="0 0 16 16" aria-hidden="true"><path d="m4 6 4 4 4-4"/></svg></button><span id="count">正在加载…</span></div>
+      <div id="face-variant" class="face-variant" hidden><span id="face-variant-label">第 1–3 关：新版线路</span><button id="face-variant-toggle" type="button">继续旧版</button></div>
       <div class="time-row"><span id="attempt-time" role="timer" aria-live="off">本关用时 0:00</span><span id="best-time" hidden></span><span id="hint-count">提示 0 次</span></div>
       <div class="board-controls"><span id="board-guide">点箭头任意一段。</span><button id="zoom" class="zoom-button" aria-pressed="false" aria-controls="board-viewport"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10" cy="10" r="6"/><path d="m14.5 14.5 5 5M7 10h6m-3-3v6"/></svg><span id="zoom-label">放大棋盘</span></button></div>
       <div class="board-wrap" id="board-wrap"><div class="board-viewport" id="board-viewport" aria-describedby="board-guide"><div class="board-surface" id="board-surface"><canvas id="board" aria-hidden="true"></canvas><div id="pieces" role="group" aria-label="点箭头任意一段，让它沿方向离开"></div></div></div><div id="cube-stage" hidden aria-label="可旋转的六面箭头立方体"></div><div id="finish" class="finish" hidden><svg viewBox="0 0 60 60" aria-hidden="true"><path d="m17 30 9 9 17-20"/></svg><h1 id="finish-title">空出来了。</h1><p id="finish-copy">留一点空，刚刚好。</p><div class="finish-record"><p id="finish-time"></p><p id="finish-best"></p><p id="finish-hints"></p></div><button id="next" class="primary-button">再来一关<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14m-6-6 6 6-6 6"/></svg></button></div></div>
@@ -47,6 +48,5 @@
     </div>
   </dialog>
   <dialog id="level-dialog" aria-labelledby="level-dialog-title"><div class="dialog-top"><h2 id="level-dialog-title">选一关，慢慢玩。</h2><button id="level-close" class="icon-button" aria-label="关闭关卡选择"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button></div><div id="level-grid"></div><p>每一关都能直接开始，已计时的关卡显示最佳用时。</p><p id="record-note">进度和撤回自动保存在当前浏览器，换设备各自保存。</p></dialog>
-  <script type="module" src="app.js?v=23"></script>
-</body>
+  <script type="module" src="app.js?v=25"></script>
 </html>
